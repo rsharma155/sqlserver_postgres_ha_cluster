@@ -102,6 +102,7 @@ def deploy_mssql_procedures(config: dict) -> list:
             f"SERVER={info['host']},{info['port']};"
             f"UID={config['sa_user']};PWD={config['sa_password']};"
             f"Database=master;TrustServerCertificate=yes;"
+            f"ConnectRetryCount=3;ConnectRetryInterval=5;"
         )
         entry = command_log.add("System",
                                 f"Deploy MSSQL procedures to {node} (all DBs)...")

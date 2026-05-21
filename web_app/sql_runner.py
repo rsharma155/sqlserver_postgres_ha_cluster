@@ -33,7 +33,7 @@ except ImportError:
     import pyodbc
 
 
-_LOGIN_ERROR_CODES = ("28000", "08001", "08004", "08007", "4060", "927")
+_LOGIN_ERROR_CODES = ("28000", "08001", "08004", "08007", "4060", "927", "08S01", "10054")
 
 # Global health cache to avoid spamming broken nodes
 # Format: {(node, database): {"status": "ok", "last_check": timestamp}}
@@ -41,7 +41,7 @@ node_health = {}
 health_lock = threading.Lock()
 
 def _is_login_error(err_msg):
-    return any(code in err_msg for code in _LOGIN_ERROR_CODES) or "restore" in err_msg.lower()
+    return any(code in err_msg for code in _LOGIN_ERROR_CODES) or "restore" in err_msg.lower() or "broken" in err_msg.lower()
 
 
 def build_conn_str(database, node="sql1"):
@@ -51,6 +51,7 @@ def build_conn_str(database, node="sql1"):
         f"SERVER={info['host']},{info['port']};"
         f"UID={MSSQL_CONFIG['sa_user']};PWD={MSSQL_CONFIG['sa_password']};"
         f"Database={database};TrustServerCertificate=yes;"
+        f"ConnectRetryCount=3;ConnectRetryInterval=5;"
     )
 
 

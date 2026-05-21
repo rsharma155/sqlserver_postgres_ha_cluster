@@ -253,10 +253,13 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
         return conn
 
     def worker(thread_id, app_name, duration):
+        logger.debug("PG worker %d starting for %ds", thread_id, duration)
         deadline = time.time() + duration
         local_stats = defaultdict(lambda: {"attempted": 0, "succeeded": 0, "failed": 0})
+        count = 0
 
         while not stop_event.is_set() and time.time() < deadline:
+            count += 1
             database = random.choice(DATABASES)
             ops = OPS[database]
             crud_type = random.choices(CRUD_TYPES, weights=CRUD_WEIGHTS, k=1)[0]
@@ -317,14 +320,16 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
                 })
             time.sleep(random.uniform(0.01, 0.05))
 
+        logger.debug("PG worker %d finishing after %d iterations", thread_id, count)
         with stats_lock:
             for key, v in local_stats.items():
                 global_stats[key]["attempted"] += v["attempted"]
                 global_stats[key]["succeeded"] += v["succeeded"]
                 global_stats[key]["failed"] += v["failed"]
 
+    total_workers = threads * app_names
     thread_list = []
-    for i in range(threads):
+    for i in range(total_workers):
         t = threading.Thread(target=worker, args=(i, random.choice(names), seconds), daemon=True)
         thread_list.append(t)
         t.start()
