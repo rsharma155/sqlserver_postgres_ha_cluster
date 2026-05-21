@@ -34,9 +34,9 @@ PG_CONFIG = {
 
 MSSQL_CONFIG = {
     "nodes": {
-        "sql1": {"host": "localhost", "port": 14331},
-        "sql2": {"host": "localhost", "port": 14332},
-        "sql3": {"host": "localhost", "port": 14333},
+        "sql1": {"host": "127.0.0.1", "port": 14331},
+        "sql2": {"host": "127.0.0.1", "port": 14332},
+        "sql3": {"host": "127.0.0.1", "port": 14333},
     },
     "driver": os.getenv("MSSQL_DRIVER", None),
     "sa_user": os.getenv("MSSQL_SA_USER", "sa"),

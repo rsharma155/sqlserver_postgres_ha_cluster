@@ -52,6 +52,7 @@ def build_conn_str(database, node="sql1"):
         f"UID={MSSQL_CONFIG['sa_user']};PWD={MSSQL_CONFIG['sa_password']};"
         f"Database={database};TrustServerCertificate=yes;"
         f"ConnectRetryCount=3;ConnectRetryInterval=5;"
+        f"LoginTimeout=30;"
     )
 
 
@@ -241,7 +242,7 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
                 conn = None
                 
                 try:
-                    conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=10)
+                    conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=30)
                     cursor = conn.cursor()
                     op_func(cursor)
                     cursor.close()
