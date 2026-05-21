@@ -19,6 +19,7 @@ Entry point: run_sql_crud(seconds, threads, users_per_thread, ...)
 import random
 import threading
 import time
+import queue
 from collections import defaultdict
 from datetime import datetime
 from config import MSSQL_CONFIG, DATABASES
@@ -54,6 +55,52 @@ def build_conn_str(database, node="sql1"):
         f"ConnectRetryCount=3;ConnectRetryInterval=5;"
         f"LoginTimeout=30;"
     )
+
+
+class ConnectionPool:
+    def __init__(self, max_per_key=3):
+        self._pools = defaultdict(lambda: queue.Queue(maxsize=max_per_key))
+
+    def acquire(self, node, database):
+        key = (node, database)
+        pool = self._pools[key]
+        try:
+            conn = pool.get_nowait()
+            try:
+                conn.cursor().execute("SELECT 1")
+                return conn
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except queue.Empty:
+            pass
+        return pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=30)
+
+    def release(self, node, database, conn):
+        if conn is None:
+            return
+        key = (node, database)
+        pool = self._pools[key]
+        try:
+            pool.put_nowait(conn)
+        except queue.Full:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    def discard(self, node, database, conn):
+        if conn is None:
+            return
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+_conn_pool = ConnectionPool()
 
 
 OPS = {
@@ -242,7 +289,7 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
                 conn = None
                 
                 try:
-                    conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=30)
+                    conn = _conn_pool.acquire(node, database)
                     cursor = conn.cursor()
                     op_func(cursor)
                     cursor.close()
@@ -252,6 +299,8 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
                         global_stats[key]["succeeded"] += 1
                     
                     success = True
+                    _conn_pool.release(node, database, conn)
+                    conn = None
                     command_log.succeed(cmd_entry)
                     with health_lock:
                         node_health[(node, database)] = {"status": "ok", "last_check": time.time()}
@@ -261,6 +310,8 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
                     err_msg = str(e)
                     last_error = err_msg
                     command_log.fail(cmd_entry, err_msg)
+                    _conn_pool.discard(node, database, conn)
+                    conn = None
                     
                     is_node_issue = _is_login_error(err_msg) or "readonly" in err_msg.lower()
                     if is_node_issue:
@@ -273,10 +324,7 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
                         break
                 finally:
                     if conn:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
+                        _conn_pool.release(node, database, conn)
 
             if not success and last_error:
                 with stats_lock:

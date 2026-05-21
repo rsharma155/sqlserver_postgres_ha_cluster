@@ -182,18 +182,34 @@ if [ ! -f "$BOOTSTRAP_MARKER" ]; then
         log "Phase 9: Skipping log shipping setup (primary only)."
     fi
 
-    # Set memory limits
+    # Set memory limits based on container cgroup limit
     log "Configuring SQL Server memory limits..."
-    case "$NODE_ID" in
-        1) MIN_MEM=1024; MAX_MEM=2048 ;;
-        2) MIN_MEM=1024; MAX_MEM=2048 ;;
-        3) MIN_MEM=512;  MAX_MEM=1536 ;;
-    esac
+    CGROUP_MEM_KB=0
+    if [ -f /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+        CGROUP_MEM_KB=$(($(cat /sys/fs/cgroup/memory/memory.limit_in_bytes) / 1024))
+    elif [ -f /sys/fs/cgroup/memory.max ]; then
+        CGROUP_MEM_KB=$(($(cat /sys/fs/cgroup/memory.max) / 1024))
+    fi
+
+    if [ "$CGROUP_MEM_KB" -gt 0 ] 2>/dev/null; then
+        MAX_MEM_MB=$(( CGROUP_MEM_KB / 1024 * 80 / 100 ))
+    else
+        # Fallback: detect via free
+        TOTAL_KB=$(free -m | awk '/^Mem:/{print $2}')
+        MAX_MEM_MB=$(( TOTAL_KB * 80 / 100 ))
+    fi
+
+    if [ "$MAX_MEM_MB" -gt 4096 ]; then
+        MAX_MEM_MB=4096
+    elif [ "$MAX_MEM_MB" -lt 512 ]; then
+        MAX_MEM_MB=512
+    fi
+    MIN_MEM_MB=$(( MAX_MEM_MB / 2 ))
 
     /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C \
-        -Q "EXEC sp_configure 'min server memory (MB)', $MIN_MEM; RECONFIGURE; EXEC sp_configure 'max server memory (MB)', $MAX_MEM; RECONFIGURE;" || true
+        -Q "EXEC sp_configure 'min server memory (MB)', $MIN_MEM_MB; RECONFIGURE; EXEC sp_configure 'max server memory (MB)', $MAX_MEM_MB; RECONFIGURE;" || true
 
-    log "Memory configured: min=${MIN_MEM}MB, max=${MAX_MEM}MB"
+    log "Memory configured: min=${MIN_MEM_MB}MB, max=${MAX_MEM_MB}MB (container limit: ${CGROUP_MEM_KB}KB)"
 
     touch "$BOOTSTRAP_MARKER"
     log "=== Bootstrap complete for sql$NODE_ID ==="
