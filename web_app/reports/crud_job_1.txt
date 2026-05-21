@@ -1,0 +1,71 @@
+========================================================================
+  CRUD Load Test Report — Job #1
+========================================================================
+
+  Environment:  sqlserver
+  Duration:     ?s
+  Threads:      3
+  Users:        2
+  Elapsed:      30.0s
+  Started:      2026-05-21T11:01:28.249044
+
+------------------------------------------------------------------------
+  SUMMARY
+------------------------------------------------------------------------
+  Total Attempted:  1710
+  Total Succeeded:  1704
+  Total Failed:     6
+  Success Rate:     99.6%
+  Throughput:       57.0 ops/sec
+
+------------------------------------------------------------------------
+  PER-OPERATION STATS
+------------------------------------------------------------------------
+  Database             Op      Attempted  Succeeded   Failed    Rate
+  -------------------- ------ ---------- ---------- -------- -------
+  department_store     C              79         79        0  100.0%
+  department_store     R             195        195        0  100.0%
+  department_store     U              72         72        0  100.0%
+  e_commerce           C              88         88        0  100.0%
+  e_commerce           R             224        224        0  100.0%
+  e_commerce           U              84         84        0  100.0%
+  erp_system           C              85         85        0  100.0%
+  erp_system           R             224        224        0  100.0%
+  erp_system           U              55         55        0  100.0%
+  hotel_booking        C              68         68        0  100.0%
+  hotel_booking        R             215        215        0  100.0%
+  hotel_booking        U              79         79        0  100.0%
+  hrm_tool             C              54         52        2   96.3%
+  hrm_tool             R             148        145        3   98.0%
+  hrm_tool             U              40         39        1   97.5%
+
+------------------------------------------------------------------------
+  FAILED TASK ANALYSIS  (6 total failures)
+------------------------------------------------------------------------
+
+  Top Errors:
+    [   6x] ('28000', '[28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Login failed for user \'sa\'. (18456) (SQLDriverConnect); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Cannot open database "hrm_tool" requested by the login. The login failed. (4060); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Login failed for user \'sa\'. (18456); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Cannot open database "hrm_tool" requested by the login. The login failed. (4060)')
+
+  Failures by Database:
+    hrm_tool                6
+
+  Failures by Operation:
+    crud_hrm_create_enrollment                       2
+    crud_hrm_read_organization (JOIN+agg)            1
+    crud_hrm_update_employee                         1
+    crud_hrm_read_employee                           1
+    crud_hrm_read_enrollment (JOIN)                  1
+
+  Recent Failed Tasks (last 20):
+  Time     Database           Operation                      Error                                        
+  -------- ------------------ ------------------------------ ---------------------------------------------
+  11:01:28 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:01:28 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:01:29 hrm_tool           crud_hrm_read_employee         ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:01:29 hrm_tool           crud_hrm_create_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:01:29 hrm_tool           crud_hrm_create_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:01:29 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+
+========================================================================
+  End of Report — Job #1
+========================================================================

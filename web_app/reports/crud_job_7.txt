@@ -1,0 +1,92 @@
+========================================================================
+  CRUD Load Test Report — Job #7
+========================================================================
+
+  Environment:  sqlserver
+  Duration:     300s
+  Threads:      10
+  Users:        5
+  Elapsed:      300.0s
+  Started:      2026-05-21T12:35:43.808968
+
+------------------------------------------------------------------------
+  SUMMARY
+------------------------------------------------------------------------
+  Total Attempted:  144052
+  Total Succeeded:  143999
+  Total Failed:     53
+  Success Rate:     100.0%
+  Throughput:       480.2 ops/sec
+
+------------------------------------------------------------------------
+  PER-OPERATION STATS
+------------------------------------------------------------------------
+  Database             Op      Attempted  Succeeded   Failed    Rate
+  -------------------- ------ ---------- ---------- -------- -------
+  department_store     C            6176       6176        0  100.0%
+  department_store     R           18655      18655        0  100.0%
+  department_store     U            6115       6115        0  100.0%
+  e_commerce           C            6081       6078        3  100.0%
+  e_commerce           R           18530      18530        0  100.0%
+  e_commerce           U            6223       6223        0  100.0%
+  erp_system           C            6177       6177        0  100.0%
+  erp_system           R           18533      18533        0  100.0%
+  erp_system           U            6164       6164        0  100.0%
+  hotel_booking        C            6217       6217        0  100.0%
+  hotel_booking        R           18549      18549        0  100.0%
+  hotel_booking        U            6162       6162        0  100.0%
+  hrm_tool             C            4098       4088       10   99.8%
+  hrm_tool             R           12333      12305       28   99.8%
+  hrm_tool             U            4039       4027       12   99.7%
+
+------------------------------------------------------------------------
+  FAILED TASK ANALYSIS  (53 total failures)
+------------------------------------------------------------------------
+
+  Top Errors:
+    [  50x] ('28000', '[28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Login failed for user \'sa\'. (18456) (SQLDriverConnect); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Cannot open database "hrm_tool" requested by the login. The login failed. (4060); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Login failed for user \'sa\'. (18456); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Cannot open database "hrm_tool" requested by the login. The login failed. (4060)')
+    [   1x] ('23000', "[23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Violation of UNIQUE KEY constraint 'UQ__products__DDDF4BE7E72FA490'. Cannot insert duplicate key in object 'dbo.products'. The duplicate key value is (SKU-LOAD-736945). (2627) (SQLExecDirectW); [23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]The statement has been terminated. (3621)")
+    [   1x] ('23000', "[23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Violation of UNIQUE KEY constraint 'UQ__products__DDDF4BE7E72FA490'. Cannot insert duplicate key in object 'dbo.products'. The duplicate key value is (SKU-LOAD-290412). (2627) (SQLExecDirectW); [23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]The statement has been terminated. (3621)")
+    [   1x] ('23000', "[23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Violation of UNIQUE KEY constraint 'UQ__products__DDDF4BE70B82D99F'. Cannot insert duplicate key in object 'dbo.products'. The duplicate key value is (SKU-LOAD-258009). (2627) (SQLExecDirectW); [23000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]The statement has been terminated. (3621)")
+
+  Failures by Database:
+    hrm_tool               50
+    e_commerce              3
+
+  Failures by Operation:
+    crud_hrm_read_organization (JOIN+agg)           14
+    crud_hrm_read_enrollment (JOIN)                  9
+    crud_hrm_update_employee                         9
+    crud_hrm_create_attendance                       6
+    crud_hrm_read_employee                           5
+    crud_hrm_create_enrollment                       4
+    crud_hrm_update_enrollment                       3
+    crud_ecom_create_product                         3
+
+  Recent Failed Tasks (last 20):
+  Time     Database           Operation                      Error                                        
+  -------- ------------------ ------------------------------ ---------------------------------------------
+  12:35:45 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:45 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:45 hrm_tool           crud_hrm_update_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:45 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:45 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:45 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:46 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:46 hrm_tool           crud_hrm_read_employee         ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:46 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:46 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:46 hrm_tool           crud_hrm_create_attendance     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:46 hrm_tool           crud_hrm_create_attendance     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:47 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:47 hrm_tool           crud_hrm_create_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:47 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:48 hrm_tool           crud_hrm_update_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:35:51 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  12:36:00 e_commerce         crud_ecom_create_product       ('23000', "[23000] [Microsoft][ODBC Driver 1 
+  12:37:53 e_commerce         crud_ecom_create_product       ('23000', "[23000] [Microsoft][ODBC Driver 1 
+  12:40:27 e_commerce         crud_ecom_create_product       ('23000', "[23000] [Microsoft][ODBC Driver 1 
+
+========================================================================
+  End of Report — Job #7
+========================================================================

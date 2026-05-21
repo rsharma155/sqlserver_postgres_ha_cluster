@@ -1,0 +1,374 @@
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.15
+    container_name: etcd
+    environment:
+      - ETCD_ENABLE_V2=true
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_DATA_DIR=/etcd-data
+    ports:
+      - "2385:2379"
+    mem_limit: 256m
+    mem_reservation: 128m
+    cpus: '0.5'
+    volumes:
+      - etcd_data:/etcd-data
+    networks:
+      - pg_network
+
+  patroni1:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+    image: custom-patroni:latest
+    container_name: patroni1
+    ports:
+      - "5043:5432"
+      - "8043:8008"
+    environment:
+      PATRONI_CONFIGURATION: |
+        scope: pgcluster
+        name: patroni1
+        log:
+          level: WARNING
+        etcd:
+          url: http://etcd:2379
+        restapi:
+          listen: 0.0.0.0:8008
+          connect_address: patroni1:8008
+        postgresql:
+          listen: 0.0.0.0:5432
+          connect_address: patroni1:5432
+          data_dir: /data/postgresql
+          authentication:
+            superuser:
+              username: postgres
+              password: postgres123
+            replication:
+              username: repl_user
+              password: repl_pass
+          parameters:
+            max_connections: 200
+            shared_preload_libraries: pg_stat_statements
+            wal_level: replica
+            archive_mode: "on"
+            archive_command: "test ! -f /wal_archive/%f && cp %p /wal_archive/%f"
+            archive_timeout: 60
+            wal_log_hints: "on"
+            wal_compression: zstd
+            wal_keep_size: 512
+            max_wal_senders: 10
+            logging_collector: "on"
+            log_directory: /var/log/postgresql
+            log_filename: postgresql-%Y-%m-%d_%H%M%S.log
+            log_rotation_age: 1440
+            log_rotation_size: 102400
+            log_statement: ddl
+            log_min_duration_statement: 1000
+            pg_stat_statements.max: 10000
+            pg_stat_statements.track: all
+        bootstrap:
+          dcs:
+            ttl: 30
+            loop_wait: 10
+            retry_timeout: 10
+            maximum_lag_on_failover: 1048576
+            postgresql:
+              use_pg_rewind: true
+              use_slots: true
+              parameters:
+                max_connections: 200
+                shared_preload_libraries: pg_stat_statements
+                wal_level: replica
+                archive_mode: "on"
+                archive_command: "test ! -f /wal_archive/%f && cp %p /wal_archive/%f"
+                archive_timeout: 60
+                wal_log_hints: "on"
+                wal_compression: zstd
+                wal_keep_size: 512
+                max_wal_senders: 10
+          initdb:
+            - encoding: UTF8
+            - data-checksums
+          pg_hba:
+            - host replication repl_user 0.0.0.0/0 md5
+            - host all all 0.0.0.0/0 md5
+    mem_limit: 2g
+    mem_reservation: 1g
+    cpus: '1'
+    volumes:
+      - patroni1_data:/data/postgresql
+      - wal_archive:/wal_archive
+      - pg_log:/var/log/postgresql
+    depends_on: [etcd]
+    networks:
+      - pg_network
+
+  patroni2:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+    image: custom-patroni:latest
+    container_name: patroni2
+    ports:
+      - "5044:5432"
+      - "8044:8008"
+    environment:
+      PATRONI_CONFIGURATION: |
+        scope: pgcluster
+        name: patroni2
+        log:
+          level: WARNING
+        etcd:
+          url: http://etcd:2379
+        restapi:
+          listen: 0.0.0.0:8008
+          connect_address: patroni2:8008
+        postgresql:
+          listen: 0.0.0.0:5432
+          connect_address: patroni2:5432
+          data_dir: /data/postgresql
+          authentication:
+            superuser:
+              username: postgres
+              password: postgres123
+            replication:
+              username: repl_user
+              password: repl_pass
+          parameters:
+            max_connections: 200
+            shared_preload_libraries: pg_stat_statements
+            wal_level: replica
+            archive_mode: "on"
+            archive_command: "test ! -f /wal_archive/%f && cp %p /wal_archive/%f"
+            archive_timeout: 60
+            wal_log_hints: "on"
+            wal_compression: zstd
+            wal_keep_size: 512
+            max_wal_senders: 10
+            logging_collector: "on"
+            log_directory: /var/log/postgresql
+            log_filename: postgresql-%Y-%m-%d_%H%M%S.log
+            log_rotation_age: 1440
+            log_rotation_size: 102400
+            log_statement: ddl
+            log_min_duration_statement: 1000
+            pg_stat_statements.max: 10000
+            pg_stat_statements.track: all
+        bootstrap:
+          dcs:
+            ttl: 30
+            loop_wait: 10
+            retry_timeout: 10
+            maximum_lag_on_failover: 1048576
+            postgresql:
+              use_pg_rewind: true
+              use_slots: true
+              parameters:
+                max_connections: 200
+                shared_preload_libraries: pg_stat_statements
+                wal_level: replica
+                archive_mode: "on"
+                archive_command: "test ! -f /wal_archive/%f && cp %p /wal_archive/%f"
+                archive_timeout: 60
+                wal_log_hints: "on"
+                wal_compression: zstd
+                wal_keep_size: 512
+                max_wal_senders: 10
+          initdb:
+            - encoding: UTF8
+            - data-checksums
+          pg_hba:
+            - host replication repl_user 0.0.0.0/0 md5
+            - host all all 0.0.0.0/0 md5
+    mem_limit: 2g
+    mem_reservation: 1g
+    cpus: '1'
+    volumes:
+      - patroni2_data:/data/postgresql
+      - wal_archive:/wal_archive
+      - pg_log:/var/log/postgresql
+    depends_on: [etcd]
+    networks:
+      - pg_network
+
+  patroni3:
+    build:
+      context: ./docker
+      dockerfile: Dockerfile
+    image: custom-patroni:latest
+    container_name: patroni3
+    ports:
+      - "5045:5432"
+      - "8045:8008"
+    environment:
+      PATRONI_CONFIGURATION: |
+        scope: pgcluster
+        name: patroni3
+        log:
+          level: WARNING
+        etcd:
+          url: http://etcd:2379
+        restapi:
+          listen: 0.0.0.0:8008
+          connect_address: patroni3:8008
+        postgresql:
+          listen: 0.0.0.0:5432
+          connect_address: patroni3:5432
+          data_dir: /data/postgresql
+          authentication:
+            superuser:
+              username: postgres
+              password: postgres123
+            replication:
+              username: repl_user
+              password: repl_pass
+          parameters:
+            max_connections: 200
+            shared_preload_libraries: pg_stat_statements
+            wal_level: replica
+            archive_mode: "on"
+            archive_command: "test ! -f /wal_archive/%f && cp %p /wal_archive/%f"
+            archive_timeout: 60
+            wal_log_hints: "on"
+            wal_compression: zstd
+            wal_keep_size: 512
+            max_wal_senders: 10
+            logging_collector: "on"
+            log_directory: /var/log/postgresql
+            log_filename: postgresql-%Y-%m-%d_%H%M%S.log
+            log_rotation_age: 1440
+            log_rotation_size: 102400
+            log_statement: ddl
+            log_min_duration_statement: 1000
+            pg_stat_statements.max: 10000
+            pg_stat_statements.track: all
+        bootstrap:
+          dcs:
+            ttl: 30
+            loop_wait: 10
+            retry_timeout: 10
+            maximum_lag_on_failover: 1048576
+            postgresql:
+              use_pg_rewind: true
+              use_slots: true
+              parameters:
+                max_connections: 200
+                shared_preload_libraries: pg_stat_statements
+                wal_level: replica
+                archive_mode: "on"
+                archive_command: "test ! -f /wal_archive/%f && cp %p /wal_archive/%f"
+                archive_timeout: 60
+                wal_log_hints: "on"
+                wal_compression: zstd
+                wal_keep_size: 512
+                max_wal_senders: 10
+          initdb:
+            - encoding: UTF8
+            - data-checksums
+          pg_hba:
+            - host replication repl_user 0.0.0.0/0 md5
+            - host all all 0.0.0.0/0 md5
+    mem_limit: 2g
+    mem_reservation: 1g
+    cpus: '1'
+    volumes:
+      - patroni3_data:/data/postgresql
+      - wal_archive:/wal_archive
+      - pg_log:/var/log/postgresql
+    depends_on: [etcd]
+    networks:
+      - pg_network
+
+  haproxy:
+    image: haproxy:latest
+    container_name: haproxy
+    ports:
+      - "5000:5000"
+      - "5001:5001"
+      - "7000:7000"
+    mem_limit: 128m
+    mem_reservation: 64m
+    cpus: '0.25'
+    volumes:
+      - ./haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    depends_on:
+      - patroni1
+      - patroni2
+      - patroni3
+    networks:
+      - pg_network
+
+  pg_backup:
+    image: postgres:17-alpine
+    container_name: pg_backup
+    environment:
+      PGPASSWORD: postgres123
+      PGHOST: haproxy
+      PGPORT: 5000
+      PGUSER: postgres
+      BACKUP_DIR: /backups
+      WAL_DIR: /wal_archive
+      RETENTION_DAYS: 7
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: '0.5'
+    volumes:
+      - pg_backup_data:/backups
+      - ./docker/backup.sh:/backup.sh
+      - wal_archive:/wal_archive:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        apk add --no-cache postgresql17-client 2>/dev/null
+        chmod +x /backup.sh
+
+        # ── Production backup schedule ──────────────────────────
+        # Daily full logical backup at 1:00 AM
+        echo "0 1 * * * /backup.sh full >> /backups/backup.log 2>&1" > /etc/crontabs/root
+        # WAL archive tarball every 6 hours (2am, 8am, 2pm, 8pm)
+        echo "0 */6 * * * /backup.sh wal >> /backups/backup.log 2>&1" >> /etc/crontabs/root
+        # Cleanup expired backups and stale WAL files at 4:00 AM daily
+        echo "0 4 * * * /backup.sh cleanup >> /backups/backup.log 2>&1" >> /etc/crontabs/root
+        # Health check: verify pg_isready every 15 minutes, log failures
+        echo "*/15 * * * * pg_isready -h haproxy -p 5000 -U postgres -t 5 >> /backups/health.log 2>&1 || echo \"[\$(date '+%Y-%m-%d %H:%M:%S')] UNREACHABLE\" >> /backups/health.log" >> /etc/crontabs/root
+
+        # Run initial full backup on first start
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Container started. Running initial backup..." | tee -a /backups/backup.log
+        /backup.sh full >> /backups/backup.log 2>&1
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Initial backup complete. crond is now managing the schedule." | tee -a /backups/backup.log
+
+        crond -f
+    depends_on: [haproxy]
+    networks:
+      - pg_network
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    container_name: seaweedfs
+    ports:
+      - "8333:8333"
+    command: "server -s3"
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: '0.5'
+    volumes:
+      - seaweedfs_data:/data
+    networks:
+      - pg_network
+
+volumes:
+  etcd_data:
+  patroni1_data:
+  patroni2_data:
+  patroni3_data:
+  wal_archive:
+  pg_log:
+  pg_backup_data:
+  seaweedfs_data:
+
+networks:
+  pg_network:
+    driver: bridge

@@ -1,0 +1,745 @@
+-- Expanded PostgreSQL CRUD Generator Functions
+-- Each function wraps a single operation; runners call SELECT fn(params).
+-- v2: Covers more tables per database with complex JOINs.
+
+-- ============================================================================
+-- HOTEL BOOKING  (4 functions × 4 CRUD types = 16 operations)
+-- ============================================================================
+
+-- C1: create reservation (complex: picks random guest internally)
+CREATE OR REPLACE FUNCTION crud_hotel_create_reservation(
+    p_num_guests INT, p_source TEXT DEFAULT 'load_test'
+) RETURNS INT AS $$
+DECLARE
+    v_guest_id INT;
+    v_res_id INT;
+BEGIN
+    SELECT guest_id INTO v_guest_id FROM guests ORDER BY RANDOM() LIMIT 1;
+    INSERT INTO reservations (guest_id, check_in, check_out, status, num_guests, source)
+    VALUES (v_guest_id, CURRENT_DATE + (RANDOM() * 30)::INT,
+            CURRENT_DATE + (RANDOM() * 30 + 31)::INT, 'confirmed', p_num_guests, p_source)
+    RETURNING reservation_id INTO v_res_id;
+    RETURN v_res_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- C2: create review (complex: FK to guest + room)
+CREATE OR REPLACE FUNCTION crud_hotel_create_review(
+    p_rating INT, p_comment TEXT
+) RETURNS INT AS $$
+DECLARE
+    v_guest_id INT; v_room_id INT; v_review_id INT;
+BEGIN
+    SELECT guest_id INTO v_guest_id FROM guests ORDER BY RANDOM() LIMIT 1;
+    SELECT room_id INTO v_room_id FROM rooms ORDER BY RANDOM() LIMIT 1;
+    INSERT INTO reviews (guest_id, room_id, rating, comment)
+    VALUES (v_guest_id, v_room_id, p_rating, p_comment)
+    RETURNING review_id INTO v_review_id;
+    RETURN v_review_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R1: read guest by id (simple)
+CREATE OR REPLACE FUNCTION crud_hotel_read_guest(p_guest_id INT)
+RETURNS TABLE(guest_id INT, first_name TEXT, last_name TEXT, email TEXT, nationality TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT g.guest_id, g.first_name::TEXT, g.last_name::TEXT,
+           g.email::TEXT, g.nationality::TEXT
+    FROM guests g WHERE g.guest_id = p_guest_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R2: read invoice summary (complex 3-table JOIN)
+CREATE OR REPLACE FUNCTION crud_hotel_read_invoice(p_invoice_id INT)
+RETURNS TABLE(inv_num TEXT, guest_name TEXT, total NUMERIC, status TEXT, paid NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT i.invoice_number::TEXT,
+           (g.first_name || ' ' || g.last_name)::TEXT,
+           i.total, i.status::TEXT,
+           COALESCE(b.paid_amount, 0)
+    FROM invoices i
+    JOIN bookings b ON i.booking_id = b.booking_id
+    JOIN reservations r ON b.reservation_id = r.reservation_id
+    JOIN guests g ON r.guest_id = g.guest_id
+    WHERE i.invoice_id = p_invoice_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R3: read room with type (JOIN)
+CREATE OR REPLACE FUNCTION crud_hotel_read_room(p_room_id INT)
+RETURNS TABLE(room_number TEXT, room_type TEXT, base_price NUMERIC, floor INT, status TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT rm.room_number::TEXT, rt.name::TEXT, rt.base_price,
+           rm.floor, rm.status::TEXT
+    FROM rooms rm
+    JOIN room_types rt ON rm.room_type_id = rt.room_type_id
+    WHERE rm.room_id = p_room_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U1: update housekeeping task status
+CREATE OR REPLACE FUNCTION crud_hotel_update_housekeeping(
+    p_task_id INT, p_status TEXT
+) RETURNS VOID AS $$
+BEGIN
+    UPDATE housekeeping_tasks
+    SET status = p_status,
+        completed_time = CASE WHEN p_status = 'completed' THEN NOW() ELSE completed_time END,
+        notes = COALESCE(notes, '') || ' | updated ' || NOW()::TEXT
+    WHERE task_id = p_task_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U2: update reservation status
+CREATE OR REPLACE FUNCTION crud_hotel_update_reservation(
+    p_reservation_id INT, p_status TEXT
+) RETURNS VOID AS $$
+BEGIN
+    UPDATE reservations SET status = p_status WHERE reservation_id = p_reservation_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D1: delete housekeeping task
+CREATE OR REPLACE FUNCTION crud_hotel_delete_housekeeping(p_task_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM housekeeping_tasks WHERE task_id = p_task_id RETURNING task_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D2: delete review
+CREATE OR REPLACE FUNCTION crud_hotel_delete_review(p_review_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM reviews WHERE review_id = p_review_id RETURNING review_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- E-COMMERCE
+-- ============================================================================
+
+-- C1: create product
+CREATE OR REPLACE FUNCTION crud_ecom_create_product(
+    p_sku TEXT, p_name TEXT, p_price NUMERIC, p_cost NUMERIC
+) RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    INSERT INTO products (sku, name, description, unit_price, cost_price, is_active)
+    VALUES (p_sku, p_name, 'Generated by load test', p_price, p_cost, TRUE)
+    RETURNING product_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- C2: create order (complex: picks random customer, inserts order + 2 items)
+CREATE OR REPLACE FUNCTION crud_ecom_create_order()
+RETURNS INT AS $$
+DECLARE
+    v_cust_id INT; v_order_id INT; v_prod1 INT; v_prod2 INT;
+    v_addr_id INT;
+BEGIN
+    SELECT customer_id INTO v_cust_id FROM customers ORDER BY RANDOM() LIMIT 1;
+    SELECT address_id INTO v_addr_id FROM customer_addresses
+    WHERE customer_id = v_cust_id ORDER BY RANDOM() LIMIT 1;
+    SELECT product_id INTO v_prod1 FROM products ORDER BY RANDOM() LIMIT 1;
+    SELECT product_id INTO v_prod2 FROM products WHERE product_id != v_prod1
+    ORDER BY RANDOM() LIMIT 1;
+    INSERT INTO orders (customer_id, total_amount, shipping_amount, tax_amount,
+                        status, shipping_address_id, billing_address_id, order_number)
+    VALUES (v_cust_id, 0, RANDOM() * 30, RANDOM() * 20,
+            'pending', v_addr_id, v_addr_id,
+            'ORD-LOAD-' || EXTRACT(EPOCH FROM NOW())::BIGINT::TEXT || '-' || LPAD(FLOOR(RANDOM() * 10000)::INT::TEXT, 4, '0'))
+    RETURNING order_id INTO v_order_id;
+    INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price)
+    SELECT v_order_id, v_prod1, (RANDOM() * 3 + 1)::INT,
+           (SELECT unit_price FROM products WHERE product_id = v_prod1),
+           (SELECT unit_price FROM products WHERE product_id = v_prod1) * ((RANDOM() * 3 + 1)::INT);
+    INSERT INTO order_items (order_id, product_id, quantity, unit_price, total_price)
+    SELECT v_order_id, v_prod2, (RANDOM() * 2 + 1)::INT,
+           (SELECT unit_price FROM products WHERE product_id = v_prod2),
+           (SELECT unit_price FROM products WHERE product_id = v_prod2) * ((RANDOM() * 2 + 1)::INT);
+    UPDATE orders SET total_amount = (SELECT SUM(total_price) FROM order_items WHERE order_id = v_order_id)
+    WHERE order_id = v_order_id;
+    RETURN v_order_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R1: read product by id
+CREATE OR REPLACE FUNCTION crud_ecom_read_product(p_product_id INT)
+RETURNS TABLE(product_id INT, name TEXT, unit_price NUMERIC, category TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT pr.product_id, pr.name::TEXT, pr.unit_price,
+           COALESCE(c.name::TEXT, 'Uncategorized')
+    FROM products pr
+    LEFT JOIN product_categories pc ON pr.product_id = pc.product_id
+    LEFT JOIN categories c ON pc.category_id = c.category_id
+    WHERE pr.product_id = p_product_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R2: read order with items (complex 3-table JOIN + aggregation)
+CREATE OR REPLACE FUNCTION crud_ecom_read_order(p_order_id INT)
+RETURNS TABLE(order_num TEXT, customer TEXT, status TEXT, item_count BIGINT, total NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT o.order_number::TEXT,
+           (c.first_name || ' ' || c.last_name)::TEXT,
+           o.status::TEXT,
+           COUNT(oi.order_item_id)::BIGINT,
+           o.total_amount
+    FROM orders o
+    JOIN customers c ON o.customer_id = c.customer_id
+    LEFT JOIN order_items oi ON o.order_id = oi.order_id
+    WHERE o.order_id = p_order_id
+    GROUP BY o.order_id, c.first_name, c.last_name;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R3: read customer recent orders
+CREATE OR REPLACE FUNCTION crud_ecom_read_customer(p_customer_id INT)
+RETURNS TABLE(first_name TEXT, last_name TEXT, email TEXT, recent_orders BIGINT, total_spent NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT c.first_name::TEXT, c.last_name::TEXT, c.email::TEXT,
+           COUNT(DISTINCT o.order_id)::BIGINT,
+           COALESCE(SUM(o.total_amount), 0)
+    FROM customers c
+    LEFT JOIN orders o ON c.customer_id = o.customer_id
+    WHERE c.customer_id = p_customer_id
+    GROUP BY c.customer_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U1: update review helpful count
+CREATE OR REPLACE FUNCTION crud_ecom_update_review(p_review_id INT)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE product_reviews SET helpful_count = helpful_count + 1 WHERE review_id = p_review_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U2: update order status
+CREATE OR REPLACE FUNCTION crud_ecom_update_order(p_order_id INT, p_status TEXT)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE orders SET status = p_status WHERE order_id = p_order_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D1: delete review
+CREATE OR REPLACE FUNCTION crud_ecom_delete_review(p_review_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM product_reviews WHERE review_id = p_review_id RETURNING review_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D2: delete inactive cart
+CREATE OR REPLACE FUNCTION crud_ecom_delete_cart(p_cart_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM cart_items WHERE cart_id = p_cart_id;
+    DELETE FROM shopping_cart WHERE cart_id = p_cart_id RETURNING cart_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- ERP SYSTEM
+-- ============================================================================
+
+-- C1: create timesheet
+CREATE OR REPLACE FUNCTION crud_erp_create_timesheet(
+    p_employee_id INT, p_task_id INT, p_hours NUMERIC
+) RETURNS INT AS $$
+DECLARE v_id INT; v_actual_emp_id INT; v_actual_task_id INT;
+BEGIN
+    SELECT employee_id INTO v_actual_emp_id FROM employees ORDER BY RANDOM() LIMIT 1;
+    SELECT task_id INTO v_actual_task_id FROM project_tasks ORDER BY RANDOM() LIMIT 1;
+    INSERT INTO timesheets (employee_id, task_id, work_date, hours, description)
+    VALUES (v_actual_emp_id, v_actual_task_id, CURRENT_DATE, p_hours, 'Load test entry')
+    RETURNING timesheet_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- C2: create project (complex: picks company, creates with tasks)
+CREATE OR REPLACE FUNCTION crud_erp_create_project(p_name TEXT, p_budget NUMERIC)
+RETURNS INT AS $$
+DECLARE
+    v_company_id INT; v_project_id INT; v_code TEXT;
+BEGIN
+    SELECT company_id INTO v_company_id FROM companies ORDER BY RANDOM() LIMIT 1;
+    v_code := 'PRJ-' || EXTRACT(EPOCH FROM NOW())::BIGINT::TEXT || '-' || LPAD(FLOOR(RANDOM() * 10000)::INT::TEXT, 4, '0');
+    INSERT INTO projects (company_id, name, code, description, budget, status)
+    VALUES (v_company_id, p_name, v_code,
+            'Generated by load test', p_budget, 'planning')
+    RETURNING project_id INTO v_project_id;
+    INSERT INTO project_tasks (project_id, name, description, status)
+    SELECT v_project_id, 'Task ' || g, 'Auto-generated task', 'pending'
+    FROM generate_series(1, 3) g;
+    RETURN v_project_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R1: read employee (current)
+CREATE OR REPLACE FUNCTION crud_erp_read_employee(p_employee_id INT)
+RETURNS TABLE(employee_id INT, first_name TEXT, last_name TEXT, email TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT e.employee_id, e.first_name::TEXT, e.last_name::TEXT, e.email::TEXT
+    FROM employees e WHERE e.employee_id = p_employee_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R2: read employee detail (complex 3-table JOIN: employee + dept + company)
+CREATE OR REPLACE FUNCTION crud_erp_read_employee_detail(p_employee_id INT)
+RETURNS TABLE(
+    first_name TEXT, last_name TEXT, email TEXT,
+    department TEXT, company TEXT, salary NUMERIC, status TEXT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT e.first_name::TEXT, e.last_name::TEXT, e.email::TEXT,
+           COALESCE(d.name::TEXT, 'N/A'), COALESCE(c.name::TEXT, 'N/A'),
+           e.salary, e.status::TEXT
+    FROM employees e
+    LEFT JOIN departments d ON e.dept_id = d.dept_id
+    LEFT JOIN companies c ON e.company_id = c.company_id
+    WHERE e.employee_id = p_employee_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R3: read project summary (aggregate: task count + budget)
+CREATE OR REPLACE FUNCTION crud_erp_read_project(p_project_id INT)
+RETURNS TABLE(name TEXT, status TEXT, task_count BIGINT, budget NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.name::TEXT, p.status::TEXT,
+           COUNT(pt.task_id)::BIGINT, p.budget
+    FROM projects p
+    LEFT JOIN project_tasks pt ON p.project_id = pt.project_id
+    WHERE p.project_id = p_project_id
+    GROUP BY p.project_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U1: update timesheet approval
+CREATE OR REPLACE FUNCTION crud_erp_update_timesheet(p_timesheet_id INT)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE timesheets SET approved = TRUE,
+        description = COALESCE(description, '') || ' | reviewed'
+    WHERE timesheet_id = p_timesheet_id AND approved = FALSE;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U2: update employee salary
+CREATE OR REPLACE FUNCTION crud_erp_update_employee(p_employee_id INT, p_salary NUMERIC)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE employees SET salary = p_salary WHERE employee_id = p_employee_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D1: delete timesheet
+CREATE OR REPLACE FUNCTION crud_erp_delete_timesheet(p_timesheet_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM timesheets WHERE timesheet_id = p_timesheet_id RETURNING timesheet_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D2: delete leave request
+CREATE OR REPLACE FUNCTION crud_erp_delete_leave(p_leave_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM leave_requests WHERE leave_id = p_leave_id RETURNING leave_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- HRM TOOL
+-- ============================================================================
+
+-- C1: create enrollment
+CREATE OR REPLACE FUNCTION crud_hrm_create_enrollment(
+    p_program_id INT, p_employee_id INT, p_status TEXT
+) RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    INSERT INTO training_enrollments (program_id, employee_id, status)
+    VALUES (p_program_id, p_employee_id, p_status)
+    RETURNING enrollment_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- C2: create attendance record
+CREATE OR REPLACE FUNCTION crud_hrm_create_attendance(
+    p_employee_id INT, p_hours NUMERIC
+) RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    INSERT INTO attendance_hrm (employee_id, work_date, clock_in, clock_out, hours_worked, status)
+    VALUES (p_employee_id, CURRENT_DATE, '08:00', '08:00' + (p_hours * INTERVAL '1 hour'),
+            p_hours, 'present')
+    RETURNING attendance_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R1: read employee (simple)
+CREATE OR REPLACE FUNCTION crud_hrm_read_employee(p_employee_id INT)
+RETURNS TABLE(employee_id INT, code TEXT, first_name TEXT, last_name TEXT, email TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT e.employee_id, e.employee_code::TEXT,
+           e.first_name::TEXT, e.last_name::TEXT, e.email::TEXT
+    FROM employees_hrm e WHERE e.employee_id = p_employee_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R2: read enrollments with prog details (complex JOIN)
+CREATE OR REPLACE FUNCTION crud_hrm_read_enrollment(p_enrollment_id INT)
+RETURNS TABLE(prog_name TEXT, employee_name TEXT, status TEXT, enrolled_at TIMESTAMP) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT tp.program_name::TEXT,
+           (eh.first_name || ' ' || eh.last_name)::TEXT,
+           te.status::TEXT, te.enrolled_at
+    FROM training_enrollments te
+    JOIN training_programs tp ON te.program_id = tp.program_id
+    JOIN employees_hrm eh ON te.employee_id = eh.employee_id
+    WHERE te.enrollment_id = p_enrollment_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R3: read org employee count (aggregate)
+CREATE OR REPLACE FUNCTION crud_hrm_read_organization(p_org_id INT)
+RETURNS TABLE(org_name TEXT, emp_count BIGINT, active_count BIGINT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT o.name::TEXT,
+           COUNT(eh.employee_id)::BIGINT,
+           COUNT(eh.employee_id) FILTER (WHERE eh.status = 'active')::BIGINT
+    FROM organizations o
+    LEFT JOIN employees_hrm eh ON o.org_id = eh.org_id
+    WHERE o.org_id = p_org_id
+    GROUP BY o.org_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U1: update enrollment status
+CREATE OR REPLACE FUNCTION crud_hrm_update_enrollment(p_enrollment_id INT, p_status TEXT)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE training_enrollments SET status = p_status WHERE enrollment_id = p_enrollment_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U2: update employee status
+CREATE OR REPLACE FUNCTION crud_hrm_update_employee(p_employee_id INT, p_status TEXT)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE employees_hrm SET status = p_status WHERE employee_id = p_employee_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D1: delete enrollment
+CREATE OR REPLACE FUNCTION crud_hrm_delete_enrollment(p_enrollment_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM training_enrollments WHERE enrollment_id = p_enrollment_id RETURNING enrollment_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D2: delete attendance record
+CREATE OR REPLACE FUNCTION crud_hrm_delete_attendance(p_record_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM attendance_hrm WHERE attendance_id = p_record_id RETURNING attendance_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- DEPARTMENT STORE
+-- ============================================================================
+
+-- C1: create inventory movement
+CREATE OR REPLACE FUNCTION crud_dept_create_movement(
+    p_inventory_id INT, p_movement_type TEXT, p_quantity INT, p_ref_type TEXT
+) RETURNS INT AS $$
+DECLARE v_id INT; v_actual_inventory_id INT;
+BEGIN
+    SELECT inventory_id INTO v_actual_inventory_id FROM inventory_store ORDER BY RANDOM() LIMIT 1;
+    INSERT INTO inventory_movements (inventory_id, movement_type, quantity, reference_type, notes)
+    VALUES (v_actual_inventory_id, p_movement_type, p_quantity, p_ref_type, 'Load test movement')
+    RETURNING movement_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- C2: create sale (complex: store + product + customer multi-step)
+CREATE OR REPLACE FUNCTION crud_dept_create_sale()
+RETURNS INT AS $$
+DECLARE
+    v_product_id INT; v_customer_id INT; v_store_id INT; v_qty INT;
+BEGIN
+    SELECT product_id INTO v_product_id FROM products_store ORDER BY RANDOM() LIMIT 1;
+    SELECT store_id INTO v_store_id FROM stores ORDER BY RANDOM() LIMIT 1;
+    v_qty := (RANDOM() * 3 + 1)::INT;
+    INSERT INTO inventory_movements (inventory_id, movement_type, quantity, reference_type, notes)
+    VALUES ((SELECT inventory_id FROM inventory_store WHERE product_id = v_product_id
+             LIMIT 1), 'outbound', v_qty, 'sale', 'Auto-generated sale');
+    RETURN v_product_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R1: read product (simple)
+CREATE OR REPLACE FUNCTION crud_dept_read_product(p_product_id INT)
+RETURNS TABLE(product_id INT, name TEXT, price NUMERIC, sku TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT p.product_id, p.name::TEXT, p.unit_price, p.sku::TEXT
+    FROM products_store p WHERE p.product_id = p_product_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R2: read inventory with product (JOIN)
+CREATE OR REPLACE FUNCTION crud_dept_read_inventory(p_inventory_id INT)
+RETURNS TABLE(product_name TEXT, quantity INT, price NUMERIC) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT ps.name::TEXT, inv.quantity, ps.unit_price
+    FROM inventory_store inv
+    JOIN products_store ps ON inv.product_id = ps.product_id
+    WHERE inv.inventory_id = p_inventory_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- R3: read promotion with store (JOIN)
+CREATE OR REPLACE FUNCTION crud_dept_read_promotion(p_promotion_id INT)
+RETURNS TABLE(promo_name TEXT, store_name TEXT, discount NUMERIC, active BOOLEAN) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT pr.promotion_name::TEXT, s.name::TEXT,
+           pr.discount_value, pr.is_active
+    FROM promotions pr
+    JOIN stores s ON pr.store_id = s.store_id
+    WHERE pr.promotion_id = p_promotion_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U1: update movement note
+CREATE OR REPLACE FUNCTION crud_dept_update_movement(p_movement_id INT)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE inventory_movements SET notes = COALESCE(notes, '') || ' | updated ' || NOW()::TEXT
+    WHERE movement_id = p_movement_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- U2: update product price
+CREATE OR REPLACE FUNCTION crud_dept_update_product(p_product_id INT, p_price NUMERIC)
+RETURNS VOID AS $$
+BEGIN
+    UPDATE products_store SET unit_price = p_price WHERE product_id = p_product_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D1: delete movement
+CREATE OR REPLACE FUNCTION crud_dept_delete_movement(p_movement_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM inventory_movements WHERE movement_id = p_movement_id RETURNING movement_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- D2: delete promotion
+CREATE OR REPLACE FUNCTION crud_dept_delete_promotion(p_promotion_id INT)
+RETURNS INT AS $$
+DECLARE v_id INT;
+BEGIN
+    DELETE FROM promotions WHERE promotion_id = p_promotion_id RETURNING promotion_id INTO v_id;
+    RETURN v_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- SEED DATA — populate reference tables so FK lookups work
+-- Each INSERT uses WHERE NOT EXISTS guards (safe for repeated deploys)
+-- Wrapped in DO blocks to avoid "relation does not exist" errors in non-owner DBs.
+-- ============================================================================
+
+DO $$
+BEGIN
+    -- ERP SYSTEM
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'companies') THEN
+        EXECUTE 'INSERT INTO companies (company_id, name, tax_id, address, phone, email, is_active)
+        SELECT 1, ''Acme Corporation'', ''TAX-101-USA'', ''123 Main St, New York, NY'', ''+1-555-0301'', ''info@acme.com'', true
+        WHERE NOT EXISTS (SELECT 1 FROM companies WHERE company_id = 1)';
+
+        EXECUTE 'INSERT INTO companies (company_id, name, tax_id, address, phone, email, is_active)
+        SELECT 2, ''Globex Inc'', ''TAX-102-USA'', ''456 Oak Ave, San Francisco, CA'', ''+1-555-0302'', ''info@globex.com'', true
+        WHERE NOT EXISTS (SELECT 1 FROM companies WHERE company_id = 2)';
+
+        EXECUTE 'INSERT INTO companies (company_id, name, tax_id, address, phone, email, is_active)
+        SELECT 3, ''Initech LLC'', ''TAX-103-USA'', ''789 Pine Rd, Austin, TX'', ''+1-555-0303'', ''info@initech.com'', true
+        WHERE NOT EXISTS (SELECT 1 FROM companies WHERE company_id = 3)';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'departments') THEN
+        EXECUTE 'INSERT INTO departments (company_id, name, code, budget)
+        SELECT 1, ''Engineering'', ''ENG-01'', 500000.00
+        WHERE NOT EXISTS (SELECT 1 FROM departments WHERE code = ''ENG-01'')';
+        EXECUTE 'INSERT INTO departments (company_id, name, code, budget)
+        SELECT 1, ''Marketing'', ''MKT-01'', 200000.00
+        WHERE NOT EXISTS (SELECT 1 FROM departments WHERE code = ''MKT-01'')';
+        EXECUTE 'INSERT INTO departments (company_id, name, code, budget)
+        SELECT 1, ''Finance'', ''FIN-01'', 150000.00
+        WHERE NOT EXISTS (SELECT 1 FROM departments WHERE code = ''FIN-01'')';
+        EXECUTE 'INSERT INTO departments (company_id, name, code, budget)
+        SELECT 2, ''Engineering'', ''ENG-02'', 400000.00
+        WHERE NOT EXISTS (SELECT 1 FROM departments WHERE code = ''ENG-02'')';
+        EXECUTE 'INSERT INTO departments (company_id, name, code, budget)
+        SELECT 2, ''Sales'', ''SAL-02'', 300000.00
+        WHERE NOT EXISTS (SELECT 1 FROM departments WHERE code = ''SAL-02'')';
+        EXECUTE 'INSERT INTO departments (company_id, name, code, budget)
+        SELECT 3, ''Operations'', ''OPS-03'', 250000.00
+        WHERE NOT EXISTS (SELECT 1 FROM departments WHERE code = ''OPS-03'')';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'employees') THEN
+        EXECUTE 'INSERT INTO employees (company_id, dept_id, first_name, last_name, email, salary, status)
+        SELECT 1, 1, ''Frank'', ''Miller'', ''frank.m@acme.com'', 95000.00, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM employees WHERE email = ''frank.m@acme.com'')';
+        EXECUTE 'INSERT INTO employees (company_id, dept_id, first_name, last_name, email, salary, status)
+        SELECT 1, 1, ''Grace'', ''Lee'', ''grace.l@acme.com'', 85000.00, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM employees WHERE email = ''grace.l@acme.com'')';
+        EXECUTE 'INSERT INTO employees (company_id, dept_id, first_name, last_name, email, salary, status)
+        SELECT 1, 2, ''Henry'', ''Davis'', ''henry.d@acme.com'', 72000.00, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM employees WHERE email = ''henry.d@acme.com'')';
+        EXECUTE 'INSERT INTO employees (company_id, dept_id, first_name, last_name, email, salary, status)
+        SELECT 2, 4, ''Irene'', ''Wilson'', ''irene.w@globex.com'', 90000.00, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM employees WHERE email = ''irene.w@globex.com'')';
+        EXECUTE 'INSERT INTO employees (company_id, dept_id, first_name, last_name, email, salary, status)
+        SELECT 2, 5, ''Jack'', ''Moore'', ''jack.m@globex.com'', 78000.00, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM employees WHERE email = ''jack.m@globex.com'')';
+        EXECUTE 'INSERT INTO employees (company_id, dept_id, first_name, last_name, email, salary, status)
+        SELECT 3, 6, ''Karen'', ''White'', ''karen.w@initech.com'', 70000.00, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM employees WHERE email = ''karen.w@initech.com'')';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'projects') THEN
+        EXECUTE 'INSERT INTO projects (company_id, name, code, description, start_date, status)
+        SELECT 1, ''Cloud Migration'', ''PRJ-ACM-001'', ''Migrate infrastructure to cloud'', CURRENT_DATE, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM projects WHERE code = ''PRJ-ACM-001'')';
+        EXECUTE 'INSERT INTO projects (company_id, name, code, description, start_date, status)
+        SELECT 1, ''Mobile App v2'', ''PRJ-ACM-002'', ''Version 2 of mobile application'', CURRENT_DATE, ''planning''
+        WHERE NOT EXISTS (SELECT 1 FROM projects WHERE code = ''PRJ-ACM-002'')';
+        EXECUTE 'INSERT INTO projects (company_id, name, code, description, start_date, status)
+        SELECT 2, ''Data Analytics'', ''PRJ-GLB-001'', ''Implement data analytics platform'', CURRENT_DATE, ''active''
+        WHERE NOT EXISTS (SELECT 1 FROM projects WHERE code = ''PRJ-GLB-001'')';
+        EXECUTE 'INSERT INTO projects (company_id, name, code, description, start_date, status)
+        SELECT 3, ''ERP Upgrade'', ''PRJ-INT-001'', ''Upgrade ERP system to latest version'', CURRENT_DATE, ''planning''
+        WHERE NOT EXISTS (SELECT 1 FROM projects WHERE code = ''PRJ-INT-001'')';
+    END IF;
+
+    -- DEPARTMENT STORE
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stores') THEN
+        EXECUTE 'INSERT INTO stores (store_code, name, address, city, state, zip, phone, email, is_active)
+        SELECT ''NYC-001'', ''Downtown NYC Store'', ''1 Broadway, New York'', ''New York'', ''NY'', ''10004'', ''+1-555-0501'', ''nyc01@store.com'', true
+        WHERE NOT EXISTS (SELECT 1 FROM stores WHERE store_code = ''NYC-001'')';
+        EXECUTE 'INSERT INTO stores (store_code, name, address, city, state, zip, phone, email, is_active)
+        SELECT ''LA-001'', ''Hollywood Store'', ''500 Sunset Blvd, Los Angeles'', ''Los Angeles'', ''CA'', ''90028'', ''+1-555-0502'', ''la01@store.com'', true
+        WHERE NOT EXISTS (SELECT 1 FROM stores WHERE store_code = ''LA-001'')';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'departments_store') THEN
+        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT 1, ''Electronics'', ''DEP-ELEC'', 100000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-ELEC'')';
+        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT 1, ''Apparel'', ''DEP-APP'', 80000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-APP'')';
+        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT 2, ''Electronics'', ''DEP-ELEC2'', 90000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-ELEC2'')';
+        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT 2, ''Home Goods'', ''DEP-HOME'', 70000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-HOME'')';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'categories_store') THEN
+        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT 1, ''Computers'', ''Laptops and desktops'', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Computers'' AND dept_id = 1)';
+        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT 1, ''Audio'', ''Headphones and speakers'', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Audio'' AND dept_id = 1)';
+        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT 2, ''Men'', ''Men apparel'', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Men'' AND dept_id = 2)';
+        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT 2, ''Women'', ''Women apparel'', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Women'' AND dept_id = 2)';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'products_store') THEN
+        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT 1, ''STORE-SKU-001'', ''BAR-001'', ''Laptop Pro 15'', ''High-performance laptop'', ''TechBrand'', 1299.99, 900.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-001'')';
+        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT 1, ''STORE-SKU-002'', ''BAR-002'', ''Wireless Keyboard'', ''Bluetooth keyboard'', ''TechBrand'', 79.99, 40.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-002'')';
+        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT 2, ''STORE-SKU-003'', ''BAR-003'', ''Noise Cancelling Headphones'', ''Over-ear ANC headphones'', ''SoundCo'', 299.99, 150.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-003'')';
+        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT 3, ''STORE-SKU-004'', ''BAR-004'', ''Casual Shirt'', ''Cotton casual shirt'', ''FashionBrand'', 39.99, 20.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-004'')';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'employees_store') THEN
+        EXECUTE 'INSERT INTO employees_store (store_id, dept_id, employee_code, first_name, last_name, email, role, hire_date, salary, is_active)
+        SELECT 1, 1, ''ST-EMP-001'', ''Mike'', ''Johnson'', ''mike.j@store-nyc.com'', ''Sales Associate'', CURRENT_DATE - INTERVAL ''18 months'', 42000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM employees_store WHERE employee_code = ''ST-EMP-001'')';
+        EXECUTE 'INSERT INTO employees_store (store_id, dept_id, employee_code, first_name, last_name, email, role, hire_date, salary, is_active)
+        SELECT 1, 2, ''ST-EMP-002'', ''Sarah'', ''Williams'', ''sarah.w@store-nyc.com'', ''Sales Associate'', CURRENT_DATE - INTERVAL ''12 months'', 40000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM employees_store WHERE employee_code = ''ST-EMP-002'')';
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'promotions') THEN
+        EXECUTE 'INSERT INTO promotions (store_id, promotion_name, description, discount_type, discount_value, min_purchase, start_date, end_date, is_active)
+        SELECT 1, ''Summer Sale'', ''20% off all electronics'', ''percent'', 20.00, 50.00, CURRENT_DATE, CURRENT_DATE + INTERVAL ''30 days'', true
+        WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE promotion_name = ''Summer Sale'')';
+        EXECUTE 'INSERT INTO promotions (store_id, promotion_name, description, discount_type, discount_value, min_purchase, start_date, end_date, is_active)
+        SELECT 2, ''Clearance'', ''Up to 50% off home goods'', ''percent'', 50.00, 25.00, CURRENT_DATE, CURRENT_DATE + INTERVAL ''14 days'', true
+        WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE promotion_name = ''Clearance'')';
+    END IF;
+END $$;
+
+

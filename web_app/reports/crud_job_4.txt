@@ -1,0 +1,87 @@
+========================================================================
+  CRUD Load Test Report — Job #4
+========================================================================
+
+  Environment:  sqlserver
+  Duration:     1000s
+  Threads:      5
+  Users:        10
+  Elapsed:      127.7s
+  Started:      2026-05-21T11:39:17.512396
+
+------------------------------------------------------------------------
+  SUMMARY
+------------------------------------------------------------------------
+  Total Attempted:  61648
+  Total Succeeded:  61598
+  Total Failed:     50
+  Success Rate:     99.9%
+  Throughput:       482.9 ops/sec
+
+------------------------------------------------------------------------
+  PER-OPERATION STATS
+------------------------------------------------------------------------
+  Database             Op      Attempted  Succeeded   Failed    Rate
+  -------------------- ------ ---------- ---------- -------- -------
+  department_store     C            2619       2619        0  100.0%
+  department_store     R            7870       7870        0  100.0%
+  department_store     U            2651       2651        0  100.0%
+  e_commerce           C            2584       2584        0  100.0%
+  e_commerce           R            7876       7876        0  100.0%
+  e_commerce           U            2743       2743        0  100.0%
+  erp_system           C            2671       2671        0  100.0%
+  erp_system           R            7813       7813        0  100.0%
+  erp_system           U            2582       2582        0  100.0%
+  hotel_booking        C            2607       2607        0  100.0%
+  hotel_booking        R            8208       8208        0  100.0%
+  hotel_booking        U            2618       2618        0  100.0%
+  hrm_tool             C            1763       1754        9   99.5%
+  hrm_tool             R            5237       5207       30   99.4%
+  hrm_tool             U            1806       1795       11   99.4%
+
+------------------------------------------------------------------------
+  FAILED TASK ANALYSIS  (50 total failures)
+------------------------------------------------------------------------
+
+  Top Errors:
+    [  50x] ('28000', '[28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Login failed for user \'sa\'. (18456) (SQLDriverConnect); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Cannot open database "hrm_tool" requested by the login. The login failed. (4060); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Login failed for user \'sa\'. (18456); [28000] [Microsoft][ODBC Driver 18 for SQL Server][SQL Server]Cannot open database "hrm_tool" requested by the login. The login failed. (4060)')
+
+  Failures by Database:
+    hrm_tool               50
+
+  Failures by Operation:
+    crud_hrm_read_organization (JOIN+agg)           14
+    crud_hrm_read_employee                           8
+    crud_hrm_read_enrollment (JOIN)                  8
+    crud_hrm_update_employee                         6
+    crud_hrm_create_enrollment                       6
+    crud_hrm_update_enrollment                       5
+    crud_hrm_create_attendance                       3
+
+  Recent Failed Tasks (last 20):
+  Time     Database           Operation                      Error                                        
+  -------- ------------------ ------------------------------ ---------------------------------------------
+  11:39:18 hrm_tool           crud_hrm_update_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_create_attendance     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_create_attendance     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_create_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:19 hrm_tool           crud_hrm_create_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:20 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:20 hrm_tool           crud_hrm_read_employee         ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:20 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:20 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:20 hrm_tool           crud_hrm_update_enrollment     ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:20 hrm_tool           crud_hrm_update_employee       ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:21 hrm_tool           crud_hrm_read_enrollment (JOI  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:22 hrm_tool           crud_hrm_read_organization (J  ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:22 hrm_tool           crud_hrm_read_employee         ('28000', '[28000] [Microsoft][ODBC Driver 1 
+  11:39:23 hrm_tool           crud_hrm_read_employee         ('28000', '[28000] [Microsoft][ODBC Driver 1 
+
+========================================================================
+  End of Report — Job #4
+========================================================================

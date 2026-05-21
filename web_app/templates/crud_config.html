@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRUD Config - {{ environment|capitalize }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="nav">
+            <a href="/">Home</a>
+            <a href="/backup">Backup Manager</a>
+        </nav>
+
+        <h1>
+            {% if environment == "postgres" %}
+                &#x1f418; PostgreSQL CRUD Load
+            {% else %}
+                &#x1f4be; SQL Server CRUD Load
+            {% endif %}
+        </h1>
+        <p class="subtitle">Configure and run a CRUD load test against all 5 databases.</p>
+
+        <div class="card">
+            <h2>Configuration</h2>
+            <form id="crud-form">
+                <input type="hidden" name="environment" value="{{ environment }}">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="seconds">Duration (seconds)</label>
+                        <input type="number" id="seconds" name="seconds" value="30" min="5" max="3600">
+                        <span class="form-hint">5–3600s (longer runs consume more DB connections)</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="threads">Worker Threads</label>
+                        <input type="number" id="threads" name="threads" value="2" min="1" max="20">
+                        <span class="form-hint">1–20 threads per job</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="users">Concurrent Users / App Names</label>
+                        <input type="number" id="users" name="users" value="3" min="1" max="10">
+                        <span class="form-hint">1–10 users per thread (total threads × users ≤ 50)</span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 1rem; margin-top: 1rem;">
+                    <button type="submit" class="btn {% if environment == 'postgres' %}btn-pg{% else %}btn-mssql{% endif %}" id="start-btn">
+                        &#x25B6; Start CRUD Load
+                    </button>
+                    <button type="button" class="btn btn-danger" id="stop-btn" style="display: none;">
+                        &#x25A0; Stop
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="card" id="results-card" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin-bottom: 0;">Results</h2>
+                <button class="btn btn-sm btn-secondary" id="download-report-btn" onclick="downloadReport()" style="display: none;">
+                    &#x1f4e5; Download Report
+                </button>
+            </div>
+            <div class="stats-grid" id="stats-grid"></div>
+            <table id="results-table">
+                <thead>
+                    <tr><th>Database</th><th>Op</th><th>Attempted</th><th>Succeeded</th><th>Failed</th><th>Rate</th></tr>
+                </thead>
+                <tbody id="results-body"></tbody>
+            </table>
+            <div id="failed-tasks-section" style="display: none; margin-top: 1.5rem;">
+                <hr style="border-color: rgba(51,65,85,0.4); margin-bottom: 1rem;">
+                <h2 style="color: #f87171;">&#x26a0; Failed Task Analysis</h2>
+                <div id="failed-summary" class="stats-grid" style="margin-bottom: 1rem;"></div>
+                <p style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 0.5rem;">Last <span id="failed-count-display">0</span> failed operations:</p>
+                <div class="log-box" id="failed-log-box" style="max-height: 200px;"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Live Log</h2>
+            <div class="log-box" id="log-box">
+                <div class="log-entry log-info">Waiting to start...</div>
+            </div>
+        </div>
+
+        {% if environment == "postgres" %}
+        <div class="card">
+            <h2>Databases</h2>
+            <p class="subtitle">Operations run across all 5 databases with R=60%, C/U/D=~13% each.</p>
+            <table>
+                <thead><tr><th>Database</th><th>Create</th><th>Read</th><th>Update</th><th>Delete</th></tr></thead>
+                <tbody>
+                    <tr><td>hotel_booking</td><td>housekeeping_tasks</td><td>guests</td><td>housekeeping_tasks</td><td>housekeeping_tasks</td></tr>
+                    <tr><td>e_commerce</td><td>product_reviews</td><td>products</td><td>product_reviews</td><td>product_reviews</td></tr>
+                    <tr><td>erp_system</td><td>timesheets</td><td>employees</td><td>timesheets</td><td>timesheets</td></tr>
+                    <tr><td>hrm_tool</td><td>training_enrollments</td><td>employees_hrm</td><td>training_enrollments</td><td>training_enrollments</td></tr>
+                    <tr><td>department_store</td><td>inventory_movements</td><td>products_store</td><td>inventory_movements</td><td>inventory_movements</td></tr>
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="card">
+            <h2>Databases</h2>
+            <p class="subtitle">Operations run across all 5 databases with R=60%, C/U=~20% each.</p>
+            <table>
+                <thead><tr><th>Database</th><th>Operations</th></tr></thead>
+                <tbody>
+                    <tr><td>hotel_booking</td><td>SELECT guests/reservations, INSERT/UPDATE reservations</td></tr>
+                    <tr><td>e_commerce</td><td>SELECT products/orders, INSERT product, UPDATE order</td></tr>
+                    <tr><td>erp_system</td><td>SELECT employees/projects, INSERT employee, UPDATE salary</td></tr>
+                    <tr><td>hrm_tool</td><td>SELECT employees_hrm, INSERT training programs</td></tr>
+                    <tr><td>department_store</td><td>SELECT products_store, INSERT promotions</td></tr>
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <!-- System Activity Panel -->
+        <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <h2 style="margin-bottom: 0;">&#x2699; System Activity</h2>
+                <span class="status-badge status-running" id="activity-count" style="font-size: 0.7rem;">0 commands</span>
+            </div>
+            <div class="activity-panel" id="activity-panel">
+                <div class="empty-state">
+                    <span class="icon">&#x23F3;</span>
+                    <p>Waiting for commands...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        // ── Toast ─────────────────────────────────────────────
+        function showToast(message, type) {
+            const c = document.getElementById('toast-container');
+            const t = document.createElement('div');
+            t.className = `toast toast-${type}`;
+            t.textContent = message;
+            c.appendChild(t);
+            setTimeout(() => t.remove(), 4000);
+        }
+
+        // ── Activity Panel ────────────────────────────────────
+        function updateActivity() {
+            fetch('/activity?n=50')
+                .then(r => r.json())
+                .then(entries => {
+                    const panel = document.getElementById('activity-panel');
+                    document.getElementById('activity-count').textContent = entries.length + ' commands';
+                    if (!entries.length) {
+                        panel.innerHTML = '<div class="empty-state"><span class="icon">&#x23F3;</span><p>Waiting for commands...</p></div>';
+                        return;
+                    }
+                    panel.innerHTML = entries.map(e => {
+                        const sc = (e.source||'').toLowerCase().includes('pg') ? 'source-pg'
+                            : (e.source||'').toLowerCase().includes('sql') ? 'source-sql'
+                            : (e.source||'').toLowerCase().includes('backup') ? 'source-backup'
+                            : 'source-system';
+                        const st = e.status === 'running' ? 'status-running'
+                            : e.status === 'success' ? 'status-success' : 'status-failed';
+                        return `<div class="activity-entry">
+                            <span class="ts">${e.ts||''}</span>
+                            <span class="source ${sc}">${e.source||''}</span>
+                            <span class="command" title="${e.command.replace(/"/g,'&quot;')}">${e.command||''}</span>
+                            <span class="status-badge ${st}">${e.status}</span>
+                        </div>`;
+                    }).join('');
+                }).catch(() => {});
+        }
+        setInterval(updateActivity, 1500);
+
+        // ── CRUD form ─────────────────────────────────────────
+        let currentJobId = null;
+        let statusInterval = null;
+
+        document.getElementById('crud-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const data = Object.fromEntries(formData);
+
+            document.getElementById('log-box').innerHTML = '<div class="log-entry log-info">Starting CRUD load...</div>';
+            document.getElementById('stop-btn').style.display = 'inline-block';
+
+            const res = await fetch('/start_crud', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                showToast(err.error || 'Failed to start CRUD job', 'error');
+                document.getElementById('stop-btn').style.display = 'none';
+                return;
+            }
+            const result = await res.json();
+            currentJobId = result.job_id;
+            showToast(`CRUD job #${currentJobId} started`, 'success');
+
+            if (statusInterval) clearInterval(statusInterval);
+            statusInterval = setInterval(() => pollJob(currentJobId), 500);
+        });
+
+        document.getElementById('stop-btn').addEventListener('click', async function() {
+            if (currentJobId) {
+                await fetch(`/stop_job/${currentJobId}`, {method: 'POST'});
+                showToast('CRUD job stopped', 'info');
+                this.style.display = 'none';
+            }
+        });
+
+        async function pollJob(jobId) {
+            const res = await fetch(`/job_status/${jobId}`);
+            if (!res.ok) { clearInterval(statusInterval); return; }
+            const data = await res.json();
+
+            const logBox = document.getElementById('log-box');
+            if (data.recent_events && data.recent_events.length > 0) {
+                logBox.innerHTML = data.recent_events.slice(-80).map(e => {
+                    const cls = e.success ? 'log-ok' : 'log-fail';
+                    const opLabel = e.op || '?';
+                    return `<div class="log-entry ${cls}">[${e.db}] ${opLabel} | thread=${e.thread} | ${e.success ? 'OK' : 'FAIL'}</div>`;
+                }).join('');
+                logBox.scrollTop = logBox.scrollHeight;
+            }
+
+            if (data.status === 'completed' && data.result) {
+                clearInterval(statusInterval);
+                document.getElementById('stop-btn').style.display = 'none';
+                showToast(`CRUD job #${jobId} completed`, 'success');
+                showResults(data.result);
+            }
+        }
+
+        function showResults(result) {
+            const card = document.getElementById('results-card');
+            card.style.display = 'block';
+            document.getElementById('download-report-btn').style.display = '';
+
+            document.getElementById('stats-grid').innerHTML = `
+                <div class="stat-card"><div class="value">${result.elapsed}s</div><div class="label">Duration</div></div>
+                <div class="stat-card"><div class="value">${result.total_attempted}</div><div class="label">Attempted</div></div>
+                <div class="stat-card"><div class="value">${result.total_succeeded}</div><div class="label">Succeeded</div></div>
+                <div class="stat-card"><div class="value">${result.total_failed}</div><div class="label">Failed</div></div>
+                <div class="stat-card"><div class="value">${result.throughput}</div><div class="label">Ops/sec</div></div>
+            `;
+
+            const tbody = document.getElementById('results-body');
+            tbody.innerHTML = '';
+            const sortedKeys = Object.keys(result.stats).sort();
+            for (const key of sortedKeys) {
+                const s = result.stats[key];
+                const [db, op] = key.split('.');
+                const pct = s.attempted > 0 ? (s.succeeded / s.attempted * 100).toFixed(1) : '0.0';
+                tbody.innerHTML += `<tr><td>${db}</td><td>${op}</td><td>${s.attempted}</td><td>${s.succeeded}</td><td>${s.failed}</td><td>${pct}%</td></tr>`;
+            }
+            tbody.innerHTML += `<tr style="font-weight: bold; color: #38bdf8;"><td>TOTAL</td><td></td><td>${result.total_attempted}</td><td>${result.total_succeeded}</td><td>${result.total_failed}</td><td>${result.total_attempted > 0 ? (result.total_succeeded/result.total_attempted*100).toFixed(1) : '0.0'}%</td></tr>`;
+
+            // ── Failed Task Analysis ────────────────────────
+            const failedOps = result.failed_ops || [];
+            const failedSection = document.getElementById('failed-tasks-section');
+            document.getElementById('failed-count-display').textContent = failedOps.length;
+
+            if (failedOps.length > 0) {
+                failedSection.style.display = 'block';
+
+                const errorCounts = {};
+                for (const f of failedOps) {
+                    const e = f.error || 'Unknown';
+                    errorCounts[e] = (errorCounts[e] || 0) + 1;
+                }
+                const topErrors = Object.entries(errorCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+                document.getElementById('failed-summary').innerHTML = `
+                    <div class="stat-card"><div class="value" style="color: #f87171;">${failedOps.length}</div><div class="label">Total Failures</div></div>
+                    <div class="stat-card"><div class="value" style="color: #f87171; font-size: 0.9rem;">${topErrors.map(([e, c]) => `${e}<br><span style="font-size:0.7rem;color:#94a3b8;">(${c}x)</span>`).join('<hr style="border-color:rgba(51,65,85,0.3);margin:0.3rem 0;">')}</div><div class="label">Top Errors</div></div>
+                `;
+
+                const failedLogBox = document.getElementById('failed-log-box');
+                failedLogBox.innerHTML = failedOps.slice(-50).map(f =>
+                    `<div class="log-entry log-fail">[${f.time || ''}] ${f.db} | ${f.op || '?'} | ${f.error || ''}</div>`
+                ).join('');
+            } else {
+                failedSection.style.display = 'none';
+            }
+        }
+
+        function downloadReport() {
+            if (currentJobId) {
+                window.open(`/job_report/${currentJobId}`, '_blank');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB CRUD Load Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="nav">
+            <a href="/" class="active">Home</a>
+            <a href="/backup">Backup Manager</a>
+        </nav>
+
+        <div style="display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap;">
+            <h1>Database CRUD Load Generator</h1>
+            <span id="cluster-status-badge" class="status-badge status-running" style="font-size: 0.8rem;">&#9679; Running</span>
+        </div>
+        <p class="subtitle">
+            Generate realistic CRUD transactions across all databases in your HA clusters.
+            Choose an environment to configure the workload.
+        </p>
+
+        <div class="selector-grid">
+            {% if "postgres" in active_envs %}
+            <a href="/crud/postgres" class="env-card">
+                <span class="icon">&#x1f418;</span>
+                <h2 style="color: #60a5fa;">PostgreSQL</h2>
+                <p class="sub">Patroni HA Cluster</p>
+                <p class="detail">
+                    5 databases &middot; 3 Patroni nodes &middot; HAProxy<br>
+                    Ports: 5043 (direct), 5000 (HAProxy write)
+                </p>
+                <div style="margin-top: 1.5rem;">
+                    <span class="btn btn-pg">Select PostgreSQL</span>
+                </div>
+            </a>
+            {% endif %}
+
+            {% if "sqlserver" in active_envs %}
+            <a href="/crud/sqlserver" class="env-card">
+                <span class="icon">&#x1f4be;</span>
+                <h2 style="color: #87ceeb;">SQL Server</h2>
+                <p class="sub">Always On Availability Group</p>
+                <p class="detail">
+                    5 databases &middot; 3 nodes &middot; AG<br>
+                    Ports: 14331 (sql1), 14332 (sql2), 14333 (sql3)
+                </p>
+                <div style="margin-top: 1.5rem;">
+                    <span class="btn btn-mssql">Select SQL Server</span>
+                </div>
+            </a>
+            {% endif %}
+        </div>
+
+        <!-- System Activity Panel -->
+        <div class="card" style="margin-top: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <h2 style="margin-bottom: 0;">&#x2699; System Activity</h2>
+                <span class="status-badge status-running" id="activity-count" style="font-size: 0.7rem;">0 commands</span>
+            </div>
+            <div class="activity-panel" id="activity-panel">
+                <div class="empty-state">
+                    <span class="icon">&#x23F3;</span>
+                    <p>Waiting for commands...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        // ── Toast notifications ───────────────────────────────
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            setTimeout(() => { toast.remove(); }, 4000);
+        }
+
+        // ── Activity Panel ────────────────────────────────────
+        function updateActivity() {
+            fetch('/activity?n=50')
+                .then(r => r.json())
+                .then(entries => {
+                    const panel = document.getElementById('activity-panel');
+                    const count = document.getElementById('activity-count');
+                    count.textContent = entries.length + ' commands';
+
+                    if (entries.length === 0) {
+                        panel.innerHTML = '<div class="empty-state"><span class="icon">&#x23F3;</span><p>Waiting for commands...</p></div>';
+                        return;
+                    }
+
+                    panel.innerHTML = entries.map(e => {
+                        const sourceClass = (e.source || '').toLowerCase().includes('pg') ? 'source-pg'
+                            : (e.source || '').toLowerCase().includes('sql') ? 'source-sql'
+                            : (e.source || '').toLowerCase().includes('backup') ? 'source-backup'
+                            : 'source-system';
+                        const statusClass = e.status === 'running' ? 'status-running'
+                            : e.status === 'success' ? 'status-success'
+                            : 'status-failed';
+                        return `<div class="activity-entry">
+                            <span class="ts">${e.ts || ''}</span>
+                            <span class="source ${sourceClass}">${e.source || ''}</span>
+                            <span class="command" title="${e.command.replace(/"/g, '&quot;')}">${e.command || ''}</span>
+                            <span class="status-badge ${statusClass}">${e.status}</span>
+                        </div>`;
+                    }).join('');
+                })
+                .catch(() => {});
+        }
+
+        setInterval(updateActivity, 1500);
+        updateActivity();
+    </script>
+</body>
+</html>

@@ -1,0 +1,51 @@
+========================================================================
+  CRUD Load Test Report — Job #2
+========================================================================
+
+  Environment:  postgres
+  Duration:     ?s
+  Threads:      3
+  Users:        2
+  Elapsed:      30.0s
+  Started:      2026-05-21T11:02:37.100165
+
+------------------------------------------------------------------------
+  SUMMARY
+------------------------------------------------------------------------
+  Total Attempted:  578
+  Total Succeeded:  578
+  Total Failed:     0
+  Success Rate:     100.0%
+  Throughput:       19.3 ops/sec
+
+------------------------------------------------------------------------
+  PER-OPERATION STATS
+------------------------------------------------------------------------
+  Database             Op      Attempted  Succeeded   Failed    Rate
+  -------------------- ------ ---------- ---------- -------- -------
+  department_store     C              15         15        0  100.0%
+  department_store     D              21         21        0  100.0%
+  department_store     R              55         55        0  100.0%
+  department_store     U              20         20        0  100.0%
+  e_commerce           C              21         21        0  100.0%
+  e_commerce           D               8          8        0  100.0%
+  e_commerce           R              44         44        0  100.0%
+  e_commerce           U              22         22        0  100.0%
+  erp_system           C              22         22        0  100.0%
+  erp_system           D              16         16        0  100.0%
+  erp_system           R              70         70        0  100.0%
+  erp_system           U              11         11        0  100.0%
+  hotel_booking        C              24         24        0  100.0%
+  hotel_booking        D              25         25        0  100.0%
+  hotel_booking        R              72         72        0  100.0%
+  hotel_booking        U              13         13        0  100.0%
+  hrm_tool             C              24         24        0  100.0%
+  hrm_tool             D              16         16        0  100.0%
+  hrm_tool             R              58         58        0  100.0%
+  hrm_tool             U              21         21        0  100.0%
+
+  No failures recorded.
+
+========================================================================
+  End of Report — Job #2
+========================================================================

@@ -1,0 +1,137 @@
+networks:
+  sql-ha-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/24
+
+volumes:
+  sql1-data:
+  sql1-log:
+  sql1-backup:
+  sql2-data:
+  sql2-log:
+  sql2-backup:
+  sql3-data:
+  sql3-log:
+  sql3-backup:
+  certs:
+  sql_external_backup:
+
+services:
+  sql1:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sql1
+    hostname: sql1
+    user: root
+    entrypoint: ["/bin/bash", "/scripts/bootstrap.sh"]
+    environment:
+      NODE_ID: 1
+      ACCEPT_EULA: Y
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MASTER_KEY_PASSWORD: ${MASTER_KEY_PASSWORD}
+      CERT_PASSWORD: ${CERT_PASSWORD}
+      DBMONITOR_PASSWORD: ${DBMONITOR_PASSWORD}
+    ports:
+      - "14331:1433"
+    volumes:
+      - sql1-data:/var/opt/mssql/data
+      - sql1-log:/var/opt/mssql/log
+      - sql1-backup:/var/opt/mssql/backup
+      - ./mssql-setup/bootstrap:/bootstrap:ro
+      - ./mssql-setup/scripts:/scripts:ro
+      - ./mssql-setup:/mssql-setup:ro
+      - certs:/certs
+      - sql_external_backup:/var/opt/mssql/external_backup
+    networks:
+      sql-ha-net:
+        ipv4_address: 172.25.0.11
+    mem_limit: 6g
+    cpus: '2'
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/scripts/healthcheck.sh"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  sql2:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sql2
+    hostname: sql2
+    user: root
+    entrypoint: ["/bin/bash", "/scripts/bootstrap.sh"]
+    environment:
+      NODE_ID: 2
+      ACCEPT_EULA: Y
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MASTER_KEY_PASSWORD: ${MASTER_KEY_PASSWORD}
+      CERT_PASSWORD: ${CERT_PASSWORD}
+      DBMONITOR_PASSWORD: ${DBMONITOR_PASSWORD}
+    ports:
+      - "14332:1433"
+    volumes:
+      - sql2-data:/var/opt/mssql/data
+      - sql2-log:/var/opt/mssql/log
+      - sql2-backup:/var/opt/mssql/backup
+      - ./mssql-setup/bootstrap:/bootstrap:ro
+      - ./mssql-setup/scripts:/scripts:ro
+      - ./mssql-setup:/mssql-setup:ro
+      - certs:/certs
+      - sql_external_backup:/var/opt/mssql/external_backup
+    networks:
+      sql-ha-net:
+        ipv4_address: 172.25.0.12
+    mem_limit: 6g
+    cpus: '2'
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/scripts/healthcheck.sh"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      sql1:
+        condition: service_started
+
+  sql3:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sql3
+    hostname: sql3
+    user: root
+    entrypoint: ["/bin/bash", "/scripts/bootstrap.sh"]
+    environment:
+      NODE_ID: 3
+      ACCEPT_EULA: Y
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+      MASTER_KEY_PASSWORD: ${MASTER_KEY_PASSWORD}
+      CERT_PASSWORD: ${CERT_PASSWORD}
+      DBMONITOR_PASSWORD: ${DBMONITOR_PASSWORD}
+    ports:
+      - "14333:1433"
+    volumes:
+      - sql3-data:/var/opt/mssql/data
+      - sql3-log:/var/opt/mssql/log
+      - sql3-backup:/var/opt/mssql/backup
+      - ./mssql-setup/bootstrap:/bootstrap:ro
+      - ./mssql-setup/scripts:/scripts:ro
+      - ./mssql-setup:/mssql-setup:ro
+      - certs:/certs
+      - sql_external_backup:/var/opt/mssql/external_backup
+    networks:
+      sql-ha-net:
+        ipv4_address: 172.25.0.13
+    mem_limit: 4g
+    cpus: '2'
+    healthcheck:
+      test: ["CMD", "/bin/bash", "/scripts/healthcheck.sh"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      sql1:
+        condition: service_started

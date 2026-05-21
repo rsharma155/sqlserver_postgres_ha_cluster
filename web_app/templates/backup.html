@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backup Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="nav">
+            <a href="/">Home</a>
+            <a href="/backup" class="active">Backup Manager</a>
+        </nav>
+
+        <h1>Backup &amp; Archive Manager</h1>
+        <p class="subtitle">
+            Manage PostgreSQL WAL archiving and SQL Server transaction log backups.
+        </p>
+
+        <div class="form-row">
+            <!-- PostgreSQL WAL Archive -->
+            <div class="card">
+                <h2>&#x1f418; PostgreSQL WAL Archiving</h2>
+                <p style="color: #94a3b8; margin-bottom: 1rem; font-size: 0.9rem;">
+                    Archives WAL files from <code>/wal_archive/</code> on the Patroni leader
+                    to the backup directory.
+                </p>
+                <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="stat-card">
+                        <div class="value" id="pg-status-indicator">&#9679; Stopped</div>
+                        <div class="label">Status</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="pg-last" style="font-size: 1rem;">-</div>
+                        <div class="label">Last Archive</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="pg-interval">Interval (seconds)</label>
+                    <input type="number" id="pg-interval" value="300" min="30" max="3600">
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-success btn-sm" onclick="startPgBackup()">&#x25B6; Start WAL Archive</button>
+                    <button class="btn btn-danger btn-sm" onclick="stopPgBackup()">&#x25A0; Stop</button>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <h3 style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 0.5rem;">Log</h3>
+                    <div class="log-box" id="pg-log" style="max-height: 150px;">
+                        {% for entry in status.pg_log %}
+                            <div class="log-entry log-info">{{ entry }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- SQL Server TLOG Backup -->
+            <div class="card">
+                <h2>&#x1f4be; SQL Server TLOG Backup</h2>
+                <p style="color: #94a3b8; margin-bottom: 1rem; font-size: 0.9rem;">
+                    Takes transaction log backups of all databases on all 3 nodes
+                    to <code>/var/opt/mssql/external_backup/</code>.
+                </p>
+                <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+                    <div class="stat-card">
+                        <div class="value" id="mssql-status-indicator">&#9679; Stopped</div>
+                        <div class="label">Status</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="value" id="mssql-last" style="font-size: 1rem;">-</div>
+                        <div class="label">Last Backup</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="mssql-interval">Interval (seconds)</label>
+                    <input type="number" id="mssql-interval" value="300" min="30" max="3600">
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-success btn-sm" onclick="startMssqlBackup()">&#x25B6; Start TLOG Backup</button>
+                    <button class="btn btn-danger btn-sm" onclick="stopMssqlBackup()">&#x25A0; Stop</button>
+                </div>
+                <div style="margin-top: 1rem;">
+                    <h3 style="color: #94a3b8; font-size: 0.85rem; margin-bottom: 0.5rem;">Log</h3>
+                    <div class="log-box" id="mssql-log" style="max-height: 150px;">
+                        {% for entry in status.mssql_log %}
+                            <div class="log-entry log-info">{{ entry }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Activity Panel -->
+        <div class="card" style="margin-top: 0.5rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <h2 style="margin-bottom: 0;">&#x2699; System Activity</h2>
+                <span class="status-badge status-running" id="activity-count" style="font-size: 0.7rem;">0 commands</span>
+            </div>
+            <div class="activity-panel" id="activity-panel">
+                <div class="empty-state">
+                    <span class="icon">&#x23F3;</span>
+                    <p>Waiting for commands...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+        // ── Toast ─────────────────────────────────────────────
+        function showToast(message, type) {
+            const c = document.getElementById('toast-container');
+            const t = document.createElement('div');
+            t.className = `toast toast-${type}`;
+            t.textContent = message;
+            c.appendChild(t);
+            setTimeout(() => t.remove(), 4000);
+        }
+
+        // ── Activity Panel ────────────────────────────────────
+        function updateActivity() {
+            fetch('/activity?n=50')
+                .then(r => r.json())
+                .then(entries => {
+                    const panel = document.getElementById('activity-panel');
+                    document.getElementById('activity-count').textContent = entries.length + ' commands';
+                    if (!entries.length) {
+                        panel.innerHTML = '<div class="empty-state"><span class="icon">&#x23F3;</span><p>Waiting for commands...</p></div>';
+                        return;
+                    }
+                    panel.innerHTML = entries.map(e => {
+                        const sc = (e.source||'').toLowerCase().includes('pg') ? 'source-pg'
+                            : (e.source||'').toLowerCase().includes('sql') ? 'source-sql'
+                            : (e.source||'').toLowerCase().includes('backup') ? 'source-backup'
+                            : 'source-system';
+                        const st = e.status === 'running' ? 'status-running'
+                            : e.status === 'success' ? 'status-success' : 'status-failed';
+                        return `<div class="activity-entry">
+                            <span class="ts">${e.ts||''}</span>
+                            <span class="source ${sc}">${e.source||''}</span>
+                            <span class="command" title="${e.command.replace(/"/g,'&quot;')}">${e.command||''}</span>
+                            <span class="status-badge ${st}">${e.status}</span>
+                        </div>`;
+                    }).join('');
+                }).catch(() => {});
+        }
+        setInterval(updateActivity, 1500);
+
+        // ── Backup Status ─────────────────────────────────────
+        function updateStatus() {
+            fetch('/backup/status')
+                .then(r => r.json())
+                .then(data => {
+                    const pgEl = document.getElementById('pg-status-indicator');
+                    pgEl.innerHTML = data.pg_archive_running ? '&#9679; Running' : '&#9679; Stopped';
+                    pgEl.style.color = data.pg_archive_running ? '#4ade80' : '#f87171';
+                    document.getElementById('pg-last').textContent = data.pg_last || '-';
+
+                    const msEl = document.getElementById('mssql-status-indicator');
+                    msEl.innerHTML = data.mssql_backup_running ? '&#9679; Running' : '&#9679; Stopped';
+                    msEl.style.color = data.mssql_backup_running ? '#4ade80' : '#f87171';
+                    document.getElementById('mssql-last').textContent = data.mssql_last || '-';
+
+                    const pgLog = document.getElementById('pg-log');
+                    if (data.pg_log && data.pg_log.length) {
+                        pgLog.innerHTML = data.pg_log.slice(-10).map(e =>
+                            `<div class="log-entry log-info">${e}</div>`
+                        ).join('');
+                    }
+
+                    const msLog = document.getElementById('mssql-log');
+                    if (data.mssql_log && data.mssql_log.length) {
+                        msLog.innerHTML = data.mssql_log.slice(-10).map(e =>
+                            `<div class="log-entry log-info">${e}</div>`
+                        ).join('');
+                    }
+                })
+                .catch(() => {});
+        }
+
+        function startPgBackup() {
+            const interval = document.getElementById('pg-interval').value;
+            fetch('/backup/start_pg', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({interval: parseInt(interval)}),
+            }).then(r => r.ok ? showToast('PG WAL archiving started', 'success') : null)
+              .then(() => updateStatus());
+        }
+
+        function stopPgBackup() {
+            fetch('/backup/stop_pg', {method: 'POST'})
+                .then(r => r.ok ? showToast('PG WAL archiving stopped', 'info') : null)
+                .then(() => updateStatus());
+        }
+
+        function startMssqlBackup() {
+            const interval = document.getElementById('mssql-interval').value;
+            fetch('/backup/start_mssql', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({interval: parseInt(interval)}),
+            }).then(r => r.ok ? showToast('MSSQL TLOG backup started', 'success') : null)
+              .then(() => updateStatus());
+        }
+
+        function stopMssqlBackup() {
+            fetch('/backup/stop_mssql', {method: 'POST'})
+                .then(r => r.ok ? showToast('MSSQL TLOG backup stopped', 'info') : null)
+                .then(() => updateStatus());
+        }
+
+        setInterval(updateStatus, 3000);
+        updateStatus();
+    </script>
+</body>
+</html>
