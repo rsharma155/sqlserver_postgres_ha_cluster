@@ -670,75 +670,75 @@ BEGIN
 
     -- DEPARTMENT STORE
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'stores') THEN
-        EXECUTE 'INSERT INTO stores (store_code, name, address, city, state, zip, phone, email, is_active)
-        SELECT ''NYC-001'', ''Downtown NYC Store'', ''1 Broadway, New York'', ''New York'', ''NY'', ''10004'', ''+1-555-0501'', ''nyc01@store.com'', true
-        WHERE NOT EXISTS (SELECT 1 FROM stores WHERE store_code = ''NYC-001'')';
-        EXECUTE 'INSERT INTO stores (store_code, name, address, city, state, zip, phone, email, is_active)
-        SELECT ''LA-001'', ''Hollywood Store'', ''500 Sunset Blvd, Los Angeles'', ''Los Angeles'', ''CA'', ''90028'', ''+1-555-0502'', ''la01@store.com'', true
-        WHERE NOT EXISTS (SELECT 1 FROM stores WHERE store_code = ''LA-001'')';
+        INSERT INTO stores (store_code, name, address, city, state, zip, phone, email, is_active)
+        SELECT 'NYC-001', 'Downtown NYC Store', '1 Broadway, New York', 'New York', 'NY', '10004', '+1-555-0501', 'nyc01@store.com', true
+        WHERE NOT EXISTS (SELECT 1 FROM stores WHERE store_code = 'NYC-001');
+        INSERT INTO stores (store_code, name, address, city, state, zip, phone, email, is_active)
+        SELECT 'LA-001', 'Hollywood Store', '500 Sunset Blvd, Los Angeles', 'Los Angeles', 'CA', '90028', '+1-555-0502', 'la01@store.com', true
+        WHERE NOT EXISTS (SELECT 1 FROM stores WHERE store_code = 'LA-001');
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'departments_store') THEN
-        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
-        SELECT 1, ''Electronics'', ''DEP-ELEC'', 100000.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-ELEC'')';
-        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
-        SELECT 1, ''Apparel'', ''DEP-APP'', 80000.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-APP'')';
-        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
-        SELECT 2, ''Electronics'', ''DEP-ELEC2'', 90000.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-ELEC2'')';
-        EXECUTE 'INSERT INTO departments_store (store_id, name, code, budget, is_active)
-        SELECT 2, ''Home Goods'', ''DEP-HOME'', 70000.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = ''DEP-HOME'')';
+        INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'NYC-001' LIMIT 1), 'Electronics', 'DEP-ELEC', 100000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = 'DEP-ELEC');
+        INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'NYC-001' LIMIT 1), 'Apparel', 'DEP-APP', 80000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = 'DEP-APP');
+        INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'LA-001' LIMIT 1), 'Electronics', 'DEP-ELEC2', 90000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = 'DEP-ELEC2');
+        INSERT INTO departments_store (store_id, name, code, budget, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'LA-001' LIMIT 1), 'Home Goods', 'DEP-HOME', 70000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM departments_store WHERE code = 'DEP-HOME');
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'categories_store') THEN
-        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
-        SELECT 1, ''Computers'', ''Laptops and desktops'', true
-        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Computers'' AND dept_id = 1)';
-        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
-        SELECT 1, ''Audio'', ''Headphones and speakers'', true
-        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Audio'' AND dept_id = 1)';
-        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
-        SELECT 2, ''Men'', ''Men apparel'', true
-        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Men'' AND dept_id = 2)';
-        EXECUTE 'INSERT INTO categories_store (dept_id, name, description, is_active)
-        SELECT 2, ''Women'', ''Women apparel'', true
-        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = ''Women'' AND dept_id = 2)';
+        INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT (SELECT dept_id FROM departments_store WHERE code = 'DEP-ELEC' LIMIT 1), 'Computers', 'Laptops and desktops', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = 'Computers' AND dept_id = (SELECT dept_id FROM departments_store WHERE code = 'DEP-ELEC' LIMIT 1));
+        INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT (SELECT dept_id FROM departments_store WHERE code = 'DEP-ELEC' LIMIT 1), 'Audio', 'Headphones and speakers', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = 'Audio' AND dept_id = (SELECT dept_id FROM departments_store WHERE code = 'DEP-ELEC' LIMIT 1));
+        INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT (SELECT dept_id FROM departments_store WHERE code = 'DEP-APP' LIMIT 1), 'Men', 'Men apparel', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = 'Men' AND dept_id = (SELECT dept_id FROM departments_store WHERE code = 'DEP-APP' LIMIT 1));
+        INSERT INTO categories_store (dept_id, name, description, is_active)
+        SELECT (SELECT dept_id FROM departments_store WHERE code = 'DEP-APP' LIMIT 1), 'Women', 'Women apparel', true
+        WHERE NOT EXISTS (SELECT 1 FROM categories_store WHERE name = 'Women' AND dept_id = (SELECT dept_id FROM departments_store WHERE code = 'DEP-APP' LIMIT 1));
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'products_store') THEN
-        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
-        SELECT 1, ''STORE-SKU-001'', ''BAR-001'', ''Laptop Pro 15'', ''High-performance laptop'', ''TechBrand'', 1299.99, 900.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-001'')';
-        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
-        SELECT 1, ''STORE-SKU-002'', ''BAR-002'', ''Wireless Keyboard'', ''Bluetooth keyboard'', ''TechBrand'', 79.99, 40.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-002'')';
-        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
-        SELECT 2, ''STORE-SKU-003'', ''BAR-003'', ''Noise Cancelling Headphones'', ''Over-ear ANC headphones'', ''SoundCo'', 299.99, 150.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-003'')';
-        EXECUTE 'INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
-        SELECT 3, ''STORE-SKU-004'', ''BAR-004'', ''Casual Shirt'', ''Cotton casual shirt'', ''FashionBrand'', 39.99, 20.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = ''STORE-SKU-004'')';
+        INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT (SELECT category_id FROM categories_store WHERE name = 'Computers' LIMIT 1), 'STORE-SKU-001', 'BAR-001', 'Laptop Pro 15', 'High-performance laptop', 'TechBrand', 1299.99, 900.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = 'STORE-SKU-001');
+        INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT (SELECT category_id FROM categories_store WHERE name = 'Computers' LIMIT 1), 'STORE-SKU-002', 'BAR-002', 'Wireless Keyboard', 'Bluetooth keyboard', 'TechBrand', 79.99, 40.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = 'STORE-SKU-002');
+        INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT (SELECT category_id FROM categories_store WHERE name = 'Audio' LIMIT 1), 'STORE-SKU-003', 'BAR-003', 'Noise Cancelling Headphones', 'Over-ear ANC headphones', 'SoundCo', 299.99, 150.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = 'STORE-SKU-003');
+        INSERT INTO products_store (category_id, sku, barcode, name, description, brand, unit_price, cost_price, is_active)
+        SELECT (SELECT category_id FROM categories_store WHERE name = 'Men' LIMIT 1), 'STORE-SKU-004', 'BAR-004', 'Casual Shirt', 'Cotton casual shirt', 'FashionBrand', 39.99, 20.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM products_store WHERE sku = 'STORE-SKU-004');
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'employees_store') THEN
-        EXECUTE 'INSERT INTO employees_store (store_id, dept_id, employee_code, first_name, last_name, email, role, hire_date, salary, is_active)
-        SELECT 1, 1, ''ST-EMP-001'', ''Mike'', ''Johnson'', ''mike.j@store-nyc.com'', ''Sales Associate'', CURRENT_DATE - INTERVAL ''18 months'', 42000.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM employees_store WHERE employee_code = ''ST-EMP-001'')';
-        EXECUTE 'INSERT INTO employees_store (store_id, dept_id, employee_code, first_name, last_name, email, role, hire_date, salary, is_active)
-        SELECT 1, 2, ''ST-EMP-002'', ''Sarah'', ''Williams'', ''sarah.w@store-nyc.com'', ''Sales Associate'', CURRENT_DATE - INTERVAL ''12 months'', 40000.00, true
-        WHERE NOT EXISTS (SELECT 1 FROM employees_store WHERE employee_code = ''ST-EMP-002'')';
+        INSERT INTO employees_store (store_id, dept_id, employee_code, first_name, last_name, email, role, hire_date, salary, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'NYC-001' LIMIT 1), (SELECT dept_id FROM departments_store WHERE code = 'DEP-ELEC' LIMIT 1), 'ST-EMP-001', 'Mike', 'Johnson', 'mike.j@store-nyc.com', 'Sales Associate', CURRENT_DATE - INTERVAL '18 months', 42000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM employees_store WHERE employee_code = 'ST-EMP-001');
+        INSERT INTO employees_store (store_id, dept_id, employee_code, first_name, last_name, email, role, hire_date, salary, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'NYC-001' LIMIT 1), (SELECT dept_id FROM departments_store WHERE code = 'DEP-APP' LIMIT 1), 'ST-EMP-002', 'Sarah', 'Williams', 'sarah.w@store-nyc.com', 'Sales Associate', CURRENT_DATE - INTERVAL '12 months', 40000.00, true
+        WHERE NOT EXISTS (SELECT 1 FROM employees_store WHERE employee_code = 'ST-EMP-002');
     END IF;
 
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'promotions') THEN
-        EXECUTE 'INSERT INTO promotions (store_id, promotion_name, description, discount_type, discount_value, min_purchase, start_date, end_date, is_active)
-        SELECT 1, ''Summer Sale'', ''20% off all electronics'', ''percent'', 20.00, 50.00, CURRENT_DATE, CURRENT_DATE + INTERVAL ''30 days'', true
-        WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE promotion_name = ''Summer Sale'')';
-        EXECUTE 'INSERT INTO promotions (store_id, promotion_name, description, discount_type, discount_value, min_purchase, start_date, end_date, is_active)
-        SELECT 2, ''Clearance'', ''Up to 50% off home goods'', ''percent'', 50.00, 25.00, CURRENT_DATE, CURRENT_DATE + INTERVAL ''14 days'', true
-        WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE promotion_name = ''Clearance'')';
+        INSERT INTO promotions (store_id, promotion_name, description, discount_type, discount_value, min_purchase, start_date, end_date, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'NYC-001' LIMIT 1), 'Summer Sale', '20% off all electronics', 'percent', 20.00, 50.00, CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days', true
+        WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE promotion_name = 'Summer Sale');
+        INSERT INTO promotions (store_id, promotion_name, description, discount_type, discount_value, min_purchase, start_date, end_date, is_active)
+        SELECT (SELECT store_id FROM stores WHERE store_code = 'LA-001' LIMIT 1), 'Clearance', 'Up to 50% off home goods', 'percent', 50.00, 25.00, CURRENT_DATE, CURRENT_DATE + INTERVAL '14 days', true
+        WHERE NOT EXISTS (SELECT 1 FROM promotions WHERE promotion_name = 'Clearance');
     END IF;
 END $$;
 
