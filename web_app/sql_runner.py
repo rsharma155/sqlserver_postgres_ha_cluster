@@ -213,25 +213,6 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
 
         while not stop_event.is_set() and time.time() < deadline:
             database = random.choice(DATABASES)
-            
-            # Pick a node, favoring those not marked as unhealthy
-            nodes_to_try = all_nodes.copy()
-            random.shuffle(nodes_to_try)
-            
-            node = None
-            for n in nodes_to_try:
-                with health_lock:
-                    health = node_health.get((n, database))
-                    if health and health["status"] == "fail" and (time.time() - health["last_check"] < 30):
-                        continue
-                    node = n
-                    break
-            
-            if not node:
-                # All nodes marked unhealthy for this DB, wait a bit
-                time.sleep(0.5)
-                continue
-
             ops = OPS[database]
             crud_type = random.choices(["C", "R", "U"], weights=[1, 3, 1], k=1)[0]
             op_list = ops.get(crud_type, [])
@@ -239,55 +220,78 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
                 continue
             op_name, op_func = random.choice(op_list)
             key = f"{database}.{crud_type}"
+            
             success = False
-            conn = None
+            last_error = None
+            nodes_tried = []
 
-            cmd_entry = command_log.add("SQL CRUD", f"[{database}@{node}] {op_name}")
+            # Shuffle nodes to balance load, but try all before giving up
+            nodes_to_try = all_nodes.copy()
+            random.shuffle(nodes_to_try)
 
-            try:
-                conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=30)
-                cursor = conn.cursor()
-                op_func(cursor)
-                cursor.close()
-                with stats_lock:
-                    global_stats[key]["attempted"] += 1
-                    global_stats[key]["succeeded"] += 1
-                success = True
-                command_log.succeed(cmd_entry)
+            for node in nodes_to_try:
+                # Check health registry first
                 with health_lock:
-                    node_health[(node, database)] = {"status": "ok", "last_check": time.time()}
-            except Exception as e:
-                err_msg = str(e)
+                    health = node_health.get((node, database))
+                    if health and health["status"] == "fail" and (time.time() - health["last_check"] < 15):
+                        continue
+
+                nodes_tried.append(node)
+                cmd_entry = command_log.add("SQL CRUD", f"[{database}@{node}] {op_name}")
+                conn = None
+                
+                try:
+                    conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=10)
+                    cursor = conn.cursor()
+                    op_func(cursor)
+                    cursor.close()
+                    
+                    with stats_lock:
+                        global_stats[key]["attempted"] += 1
+                        global_stats[key]["succeeded"] += 1
+                    
+                    success = True
+                    command_log.succeed(cmd_entry)
+                    with health_lock:
+                        node_health[(node, database)] = {"status": "ok", "last_check": time.time()}
+                    break # Success! Exit node loop.
+                
+                except Exception as e:
+                    err_msg = str(e)
+                    last_error = err_msg
+                    command_log.fail(cmd_entry, err_msg)
+                    
+                    is_node_issue = _is_login_error(err_msg) or "readonly" in err_msg.lower()
+                    if is_node_issue:
+                        logger.debug("SQL CRUD node/login fail [%s@%s] %s: %s", database, node, op_name, err_msg)
+                        with health_lock:
+                            node_health[(node, database)] = {"status": "fail", "last_check": time.time()}
+                    else:
+                        # Logic error (e.g. SQL syntax), don't bother retrying on other nodes
+                        logger.warning("SQL CRUD logic fail [%s@%s] %s: %s", database, node, op_name, err_msg)
+                        break
+                finally:
+                    if conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+
+            if not success and last_error:
                 with stats_lock:
+                    # Only count as a single failure for the job stats if all nodes failed
                     global_stats[key]["attempted"] += 1
                     global_stats[key]["failed"] += 1
-                command_log.fail(cmd_entry, err_msg)
-                
-                is_node_issue = _is_login_error(err_msg) or "readonly" in err_msg.lower()
-                
-                if is_node_issue:
-                    logger.debug("SQL CRUD node/login fail [%s@%s] %s: %s", database, node, op_name, err_msg)
-                    with health_lock:
-                        node_health[(node, database)] = {"status": "fail", "last_check": time.time()}
-                else:
-                    logger.warning("SQL CRUD logic fail [%s@%s] %s: %s", database, node, op_name, err_msg)
-                
                 with failed_ops_lock:
                     failed_ops.append({
-                        "db": database, "op": op_name, "error": err_msg,
-                        "thread": thread_id, "node": node, "time": datetime.now().strftime("%H:%M:%S"),
+                        "db": database, "op": op_name, "error": f"Tried {nodes_tried}: {last_error}",
+                        "thread": thread_id, "node": "multi", "time": datetime.now().strftime("%H:%M:%S"),
                     })
-            finally:
-                if conn:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
 
             if status_callback:
                 status_callback({
                     "db": database, "op": crud_type,
-                    "success": success, "thread": thread_id, "app": node,
+                    "success": success, "thread": thread_id, "app": nodes_tried[-1] if nodes_tried else "none",
                 })
             time.sleep(random.uniform(0.05, 0.15))
 
