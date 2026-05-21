@@ -33,10 +33,15 @@ except ImportError:
     import pyodbc
 
 
-_LOGIN_ERROR_CODES = ("28000", "08001", "08004", "08007")
+_LOGIN_ERROR_CODES = ("28000", "08001", "08004", "08007", "4060", "927")
+
+# Global health cache to avoid spamming broken nodes
+# Format: {(node, database): {"status": "ok", "last_check": timestamp}}
+node_health = {}
+health_lock = threading.Lock()
 
 def _is_login_error(err_msg):
-    return any(code in err_msg for code in _LOGIN_ERROR_CODES)
+    return any(code in err_msg for code in _LOGIN_ERROR_CODES) or "restore" in err_msg.lower()
 
 
 def build_conn_str(database, node="sql1"):
@@ -203,16 +208,29 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
 
     def worker(thread_id, duration):
         deadline = time.time() + duration
-        dead_pairs = set()
+        all_nodes = list(MSSQL_CONFIG["nodes"])
 
-        max_pairs = len(MSSQL_CONFIG["nodes"]) * len(DATABASES)
         while not stop_event.is_set() and time.time() < deadline:
-            node = random.choice(list(MSSQL_CONFIG["nodes"]))
             database = random.choice(DATABASES)
-            if (node, database) in dead_pairs:
-                if len(dead_pairs) >= max_pairs:
+            
+            # Pick a node, favoring those not marked as unhealthy
+            nodes_to_try = all_nodes.copy()
+            random.shuffle(nodes_to_try)
+            
+            node = None
+            for n in nodes_to_try:
+                with health_lock:
+                    health = node_health.get((n, database))
+                    if health and health["status"] == "fail" and (time.time() - health["last_check"] < 30):
+                        continue
+                    node = n
                     break
+            
+            if not node:
+                # All nodes marked unhealthy for this DB, wait a bit
+                time.sleep(0.5)
                 continue
+
             ops = OPS[database]
             crud_type = random.choices(["C", "R", "U"], weights=[1, 3, 1], k=1)[0]
             op_list = ops.get(crud_type, [])
@@ -226,7 +244,7 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
             cmd_entry = command_log.add("SQL CRUD", f"[{database}@{node}] {op_name}")
 
             try:
-                conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=10)
+                conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=5)
                 cursor = conn.cursor()
                 op_func(cursor)
                 cursor.close()
@@ -235,17 +253,24 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
                     global_stats[key]["succeeded"] += 1
                 success = True
                 command_log.succeed(cmd_entry)
+                with health_lock:
+                    node_health[(node, database)] = {"status": "ok", "last_check": time.time()}
             except Exception as e:
                 err_msg = str(e)
                 with stats_lock:
                     global_stats[key]["attempted"] += 1
                     global_stats[key]["failed"] += 1
                 command_log.fail(cmd_entry, err_msg)
-                if _is_login_error(err_msg):
-                    logger.debug("SQL CRUD login fail [%s@%s] %s: %s", database, node, op_name, err_msg)
-                    dead_pairs.add((node, database))
+                
+                is_node_issue = _is_login_error(err_msg) or "readonly" in err_msg.lower()
+                
+                if is_node_issue:
+                    logger.debug("SQL CRUD node/login fail [%s@%s] %s: %s", database, node, op_name, err_msg)
+                    with health_lock:
+                        node_health[(node, database)] = {"status": "fail", "last_check": time.time()}
                 else:
-                    logger.warning("SQL CRUD fail [%s@%s] %s: %s", database, node, op_name, err_msg)
+                    logger.warning("SQL CRUD logic fail [%s@%s] %s: %s", database, node, op_name, err_msg)
+                
                 with failed_ops_lock:
                     failed_ops.append({
                         "db": database, "op": op_name, "error": err_msg,
