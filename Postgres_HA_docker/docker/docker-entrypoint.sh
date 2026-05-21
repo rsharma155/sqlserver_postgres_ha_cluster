@@ -44,12 +44,13 @@ if [ "$NEEDS_INIT" = true ]; then
         sleep 2
     done
 else
-    # ── Every-boot: ensure monitoring user exists ──────────────
-    echo "[entrypoint] Ensuring monitoring user exists..."
+    # ── Every-boot: ensure monitoring and CRUD users exist ─────
+    echo "[entrypoint] Ensuring monitoring and CRUD users exist..."
     for i in $(seq 1 60); do
         if pg_isready -U postgres -h localhost -p 5432 2>/dev/null; then
             # Run idempotent user/role creation; errors expected on replicas (read-only)
             psql -U postgres -f /scripts/pgsql_init.sql 2>/dev/null || true
+            psql -U postgres -f /scripts/create_users.sql 2>/dev/null || true
             break
         fi
         if ! kill -0 $PATRONI_PID 2>/dev/null; then

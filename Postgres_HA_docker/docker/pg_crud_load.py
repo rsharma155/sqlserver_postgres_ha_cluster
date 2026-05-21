@@ -46,6 +46,21 @@ DB_CONFIG = {
     "password": "postgres123",
 }
 
+# 10 CRUD load test users created by create_users.sql.
+# Used when --users flag is passed to rotate across users.
+CRUD_USERS = [
+    {"user": "hotel_agent",   "password": "TestP@ss1!"},
+    {"user": "ecom_manager",  "password": "TestP@ss2!"},
+    {"user": "erp_operator",  "password": "TestP@ss3!"},
+    {"user": "hr_manager",    "password": "TestP@ss4!"},
+    {"user": "store_clerk",   "password": "TestP@ss5!"},
+    {"user": "hotel_guest",   "password": "TestP@ss6!"},
+    {"user": "ecom_shopper",  "password": "TestP@ss7!"},
+    {"user": "erp_finance",   "password": "TestP@ss8!"},
+    {"user": "hr_recruiter",  "password": "TestP@ss9!"},
+    {"user": "store_manager", "password": "TestP@ss10!"},
+]
+
 DATABASES = [
     "hotel_booking",
     "e_commerce",
@@ -201,12 +216,14 @@ global_stats = defaultdict(lambda: {"attempted": 0, "succeeded": 0, "failed": 0}
 # ---------------------------------------------------------------------------
 # Connection Helper
 # ---------------------------------------------------------------------------
-def build_connection(app_name, database):
+def build_connection(app_name, database, crud_user=None):
+    u = crud_user["user"] if crud_user else DB_CONFIG["user"]
+    pwd = crud_user["password"] if crud_user else DB_CONFIG["password"]
     conn = psycopg2.connect(
         host=DB_CONFIG["host"],
         port=DB_CONFIG["port"],
-        user=DB_CONFIG["user"],
-        password=DB_CONFIG["password"],
+        user=u,
+        password=pwd,
         dbname=database,
         application_name=app_name,
         connect_timeout=5,
@@ -222,9 +239,10 @@ def build_connection(app_name, database):
 CRUD_LABEL = {"C": "CREATE", "R": "READ", "U": "UPDATE", "D": "DELETE"}
 
 
-def worker(thread_id, app_name, duration):
+def worker(thread_id, app_name, duration, crud_user=None):
     deadline = time.time() + duration
     local_stats = defaultdict(lambda: {"attempted": 0, "succeeded": 0, "failed": 0})
+    my_user_label = crud_user["user"] if crud_user else DB_CONFIG["user"]
 
     while not stop_event.is_set() and time.time() < deadline:
         database = random.choice(DATABASES)
@@ -238,7 +256,7 @@ def worker(thread_id, app_name, duration):
         conn = None
         success = False
         try:
-            conn = build_connection(app_name, database)
+            conn = build_connection(app_name, database, crud_user)
             cursor = conn.cursor()
             params = op["gen"]()
             cursor.execute(op["sql"], params)
@@ -261,7 +279,7 @@ def worker(thread_id, app_name, duration):
         with print_lock:
             print(
                 f"[{result}] DB={database:20s} OP={CRUD_LABEL[crud_type]:6s} "
-                f"TABLE={target_table:25s} USER={DB_CONFIG['user']:9s} "
+                f"TABLE={target_table:25s} USER={my_user_label:20s} "
                 f"APP={app_name:20s} THR={thread_id:2d}",
                 flush=True,
             )
@@ -341,12 +359,18 @@ def main():
                         help=f"Database user (default: {DB_CONFIG['user']})")
     parser.add_argument("--password", default=DB_CONFIG["password"],
                         help="Database password")
+    parser.add_argument("--users", action="store_true",
+                        help="Rotate across 10 CRUD test users instead of using --user")
     args = parser.parse_args()
 
     DB_CONFIG["host"] = args.host
     DB_CONFIG["port"] = args.port
     DB_CONFIG["user"] = args.user
     DB_CONFIG["password"] = args.password
+
+    # When --users is set, each worker picks a random user from the
+    # 10 CRUD test users instead of using the single --user credential.
+    crud_user_pool = list(CRUD_USERS) if args.users else None
 
     seconds = max(1, args.seconds)
     num_threads = max(1, args.threads)
@@ -359,7 +383,10 @@ def main():
     print(f"    Threads : {num_threads}")
     print(f"    App Names ({num_app_names}): {', '.join(app_names)}")
     print(f"    Host    : {DB_CONFIG['host']}:{DB_CONFIG['port']}")
-    print(f"    User    : {DB_CONFIG['user']}")
+    if crud_user_pool:
+        print(f"    Users   : {len(crud_user_pool)} CRUD test users (rotated)")
+    else:
+        print(f"    User    : {DB_CONFIG['user']}")
     print(f"    Password: {'*' * len(DB_CONFIG['password'])}")
     print(f"    Databases ({len(DATABASES)}): {', '.join(DATABASES)}")
     print(f"    ── Live operation log ──")
@@ -370,8 +397,9 @@ def main():
     threads = []
     for i in range(num_threads):
         t_app_name = random.choice(app_names)
+        my_crud_user = random.choice(crud_user_pool) if crud_user_pool else None
         t = threading.Thread(
-            target=worker, args=(i, t_app_name, seconds), daemon=True
+            target=worker, args=(i, t_app_name, seconds, my_crud_user), daemon=True
         )
         threads.append(t)
         t.start()

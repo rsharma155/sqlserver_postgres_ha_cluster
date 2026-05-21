@@ -41,6 +41,10 @@ log "Creating monitoring user and permissions..."
 psql -U postgres -f /scripts/pgsql_init.sql 2>&1 | tee -a "$PROGRESS_FILE"
 log "Monitoring user created."
 
+log "Creating 10 CRUD load test users..."
+psql -U postgres -f /scripts/create_users.sql 2>&1 | tee -a "$PROGRESS_FILE"
+log "CRUD load test users created."
+
 log "============================================"
 log "  Database initialization finished"
 log "============================================"

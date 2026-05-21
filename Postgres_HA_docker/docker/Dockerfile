@@ -17,6 +17,7 @@ COPY init.sh /docker-entrypoint-initdb.d/init.sh
 COPY init_databases.sql /scripts/init_databases.sql
 COPY pg_functions.sql /scripts/pg_functions.sql
 COPY pgsql_init.sql /scripts/pgsql_init.sql
+COPY create_users.sql /scripts/create_users.sql
 
 RUN chmod +x /docker-entrypoint.sh /docker-entrypoint-initdb.d/init.sh
 
