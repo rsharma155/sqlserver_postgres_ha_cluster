@@ -187,7 +187,7 @@ if [ ! -f "$BOOTSTRAP_MARKER" ]; then
     case "$NODE_ID" in
         1) MIN_MEM=1024; MAX_MEM=2048 ;;
         2) MIN_MEM=1024; MAX_MEM=2048 ;;
-        3) MIN_MEM=512; MAX_MEM=1024 ;;
+        3) MIN_MEM=512;  MAX_MEM=1536 ;;
     esac
 
     /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C \

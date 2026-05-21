@@ -50,6 +50,10 @@ services:
         ipv4_address: 172.25.0.11
     mem_limit: 4g
     cpus: '1'
+    sysctls:
+      net.ipv4.tcp_keepalive_time: 60
+      net.ipv4.tcp_keepalive_intvl: 10
+      net.ipv4.tcp_keepalive_probes: 6
     healthcheck:
       test: ["CMD", "/bin/bash", "/scripts/healthcheck.sh"]
       interval: 15s
@@ -88,6 +92,10 @@ services:
         ipv4_address: 172.25.0.12
     mem_limit: 4g
     cpus: '1'
+    sysctls:
+      net.ipv4.tcp_keepalive_time: 60
+      net.ipv4.tcp_keepalive_intvl: 10
+      net.ipv4.tcp_keepalive_probes: 6
     healthcheck:
       test: ["CMD", "/bin/bash", "/scripts/healthcheck.sh"]
       interval: 15s
@@ -127,8 +135,12 @@ services:
     networks:
       sql-ha-net:
         ipv4_address: 172.25.0.13
-    mem_limit: 2g
+    mem_limit: 3g
     cpus: '1'
+    sysctls:
+      net.ipv4.tcp_keepalive_time: 60
+      net.ipv4.tcp_keepalive_intvl: 10
+      net.ipv4.tcp_keepalive_probes: 6
     healthcheck:
       test: ["CMD", "/bin/bash", "/scripts/healthcheck.sh"]
       interval: 15s
