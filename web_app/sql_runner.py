@@ -33,7 +33,7 @@ except ImportError:
     import pyodbc
 
 
-_LOGIN_ERROR_CODES = ("28000", "08001", "08004", "08007", "4060", "927", "08S01", "10054")
+_LOGIN_ERROR_CODES = ("28000", "08001", "08004", "08007", "4060", "927", "08S01", "10054", "258")
 
 # Global health cache to avoid spamming broken nodes
 # Format: {(node, database): {"status": "ok", "last_check": timestamp}}
@@ -41,7 +41,7 @@ node_health = {}
 health_lock = threading.Lock()
 
 def _is_login_error(err_msg):
-    return any(code in err_msg for code in _LOGIN_ERROR_CODES) or "restore" in err_msg.lower() or "broken" in err_msg.lower()
+    return any(code in err_msg for code in _LOGIN_ERROR_CODES) or "restore" in err_msg.lower() or "broken" in err_msg.lower() or "timeout" in err_msg.lower()
 
 
 def build_conn_str(database, node="sql1"):
@@ -245,7 +245,7 @@ def run_sql_crud(seconds, threads, users_per_thread, status_callback=None, stop_
             cmd_entry = command_log.add("SQL CRUD", f"[{database}@{node}] {op_name}")
 
             try:
-                conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=5)
+                conn = pyodbc.connect(build_conn_str(database, node), autocommit=True, timeout=30)
                 cursor = conn.cursor()
                 op_func(cursor)
                 cursor.close()

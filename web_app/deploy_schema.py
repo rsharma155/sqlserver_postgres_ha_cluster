@@ -107,7 +107,7 @@ def deploy_mssql_procedures(config: dict) -> list:
         entry = command_log.add("System",
                                 f"Deploy MSSQL procedures to {node} (all DBs)...")
         try:
-            conn = pyodbc.connect(conn_str, autocommit=True, timeout=15)
+            conn = pyodbc.connect(conn_str, autocommit=True, timeout=30)
             cur = conn.cursor()
             current_db = "master"
             
