@@ -124,8 +124,9 @@ def deploy_mssql_procedures(config: dict) -> list:
                         cur.execute(clean_batch)
                         current_db = new_db
                     except Exception as e:
-                        if "does not exist" in str(e).lower() or "4060" in str(e):
-                            logger.info("Skipping USE %s on %s: DB not found/accessible", new_db, node)
+                        err_msg = str(e).lower()
+                        if any(p in err_msg for p in ["does not exist", "4060", "927", "middle of a restore"]):
+                            logger.info("Skipping USE %s on %s: DB not found/accessible/restoring", new_db, node)
                             current_db = "master"
                         else:
                             raise
