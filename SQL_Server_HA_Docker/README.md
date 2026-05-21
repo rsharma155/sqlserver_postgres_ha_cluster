@@ -16,20 +16,28 @@ Phase 1 lab environment with 3-node SQL Server 2022 Always On Availability Group
 - Minimum 16 GB RAM allocated to Docker
 - At least 15 GB free disk space
 
-## Quick Start
+## Quick Start (Recommended)
+
+Use the root-level launcher script to start the environment with automatic resource detection and optimized limits:
+
+```bash
+# From the project root directory
+./start_servers.sh --SkipPostgres
+```
+
+## Manual Start (Advanced)
+
+If you prefer to start manually, ensure your Docker Desktop has at least 16 GB RAM allocated, then:
 
 ```bash
 # Clone / navigate to project directory
-cd sql-server-ha-docker
+cd SQL_Server_HA_Docker
 
 # Start all three SQL Server nodes
 docker compose up -d
 
 # Monitor bootstrap progress
 docker compose logs -f
-
-# Check health status
-docker compose ps
 ```
 
 Bootstrap takes 4-6 minutes and runs these phases on each node:

@@ -185,9 +185,9 @@ if [ ! -f "$BOOTSTRAP_MARKER" ]; then
     # Set memory limits
     log "Configuring SQL Server memory limits..."
     case "$NODE_ID" in
-        1) MIN_MEM=2048; MAX_MEM=4096 ;;
-        2) MIN_MEM=1024; MAX_MEM=3072 ;;
-        3) MIN_MEM=1024; MAX_MEM=2048 ;;
+        1) MIN_MEM=1024; MAX_MEM=2048 ;;
+        2) MIN_MEM=1024; MAX_MEM=2048 ;;
+        3) MIN_MEM=512; MAX_MEM=1024 ;;
     esac
 
     /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C \

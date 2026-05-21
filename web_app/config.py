@@ -27,7 +27,7 @@ PG_CONFIG = {
     "port": int(os.getenv("PG_PORT", "5000")),
     "user": os.getenv("PG_USER", "postgres"),
     "password": os.getenv("PG_PASSWORD", "postgres123"),
-    "haproxy_host": "localhost",
+    "haproxy_host": "127.0.0.1",
     "haproxy_port_write": 5000,
     "haproxy_port_read": 5001,
 }
