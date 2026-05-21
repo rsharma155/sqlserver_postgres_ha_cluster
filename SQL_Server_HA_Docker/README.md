@@ -203,7 +203,7 @@ Phase 8 creates a dedicated `dbmonitor_user` login with minimal required permiss
 
 Extended Events session `sqloptima_deadlocks` is created to capture deadlock reports and starts automatically.
 
-**Credentials:** `dbmonitor_user` / `M0nitor_2024_HADr!` (configured via `DBMONITOR_PASSWORD` in `.env`).
+**Credentials:** `dbmonitor_user` / `Hello@123` (configured via `DBMONITOR_PASSWORD` in `.env`).
 
 ## Log Shipping (hrm_tool: sql1 → sql2)
 
