@@ -316,6 +316,12 @@ CREATE TABLE attendance_records (
     status NVARCHAR(20) DEFAULT 'present'
 );
 
+CREATE TABLE timesheets (
+    timesheet_id INT IDENTITY(1,1) PRIMARY KEY, employee_id INT REFERENCES employees(employee_id),
+    task_id INT REFERENCES project_tasks(task_id), work_date DATE,
+    hours DECIMAL(5,2), description NVARCHAR(MAX), approved BIT DEFAULT 0
+);
+
 CREATE INDEX idx_employees_dept ON employees(dept_id);
 CREATE INDEX idx_employees_status ON employees(status);
 CREATE INDEX idx_employees_email ON employees(email);
@@ -414,6 +420,13 @@ CREATE TABLE grievances (
     created_at DATETIME2 DEFAULT SYSDATETIME(), resolved_at DATETIME2
 );
 
+CREATE TABLE attendance_records (
+    record_id INT IDENTITY(1,1) PRIMARY KEY, employee_id INT REFERENCES employees_hrm(employee_id),
+    work_date DATE, clock_in TIME, clock_out TIME,
+    hours_worked DECIMAL(5,2) DEFAULT 0, overtime DECIMAL(5,2) DEFAULT 0,
+    status NVARCHAR(20) DEFAULT 'present'
+);
+
 CREATE INDEX idx_employees_hrm_dept ON employees_hrm(dept_id);
 CREATE INDEX idx_employees_hrm_status ON employees_hrm(status);
 CREATE INDEX idx_leave_applications_employee ON leave_applications_hrm(employee_id);
@@ -424,6 +437,8 @@ CREATE INDEX idx_training_enrollments_program ON training_enrollments(program_id
 CREATE INDEX idx_training_enrollments_employee ON training_enrollments(employee_id);
 CREATE INDEX idx_job_applications_status ON job_applications(status);
 CREATE INDEX idx_grievances_status ON grievances(status);
+CREATE INDEX idx_attendance_hrm_employee ON attendance_records(employee_id);
+CREATE INDEX idx_attendance_hrm_date ON attendance_records(work_date);
 GO
 
 -- #############################################################################
@@ -525,6 +540,13 @@ CREATE TABLE marketing_campaigns (
     campaign_name NVARCHAR(200), campaign_type NVARCHAR(30),
     start_date DATE, end_date DATE, budget DECIMAL(12,2),
     description NVARCHAR(MAX), is_active BIT DEFAULT 1
+);
+
+CREATE TABLE inventory_movements (
+    movement_id INT IDENTITY(1,1) PRIMARY KEY, inventory_id INT REFERENCES inventory_store(inventory_id),
+    movement_type NVARCHAR(20), quantity INT, reference_type NVARCHAR(30),
+    reference_id INT, movement_date DATETIME2 DEFAULT SYSDATETIME(),
+    created_by NVARCHAR(50), notes NVARCHAR(MAX)
 );
 
 CREATE INDEX idx_products_store_sku ON products_store(sku);

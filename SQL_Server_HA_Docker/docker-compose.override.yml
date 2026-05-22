@@ -1,0 +1,7 @@
+services:
+  sql1:
+    mem_limit: 6.0g
+  sql2:
+    mem_limit: 6.0g
+  sql3:
+    mem_limit: 4.0g

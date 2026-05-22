@@ -225,7 +225,7 @@ CRUD_TYPES = ["C", "R", "U", "D"]
 CRUD_WEIGHTS = [1, 3, 1, 1]
 
 
-def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, password=None, status_callback=None, stop_event=None):
+def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, password=None, crud_users=None, status_callback=None, stop_event=None):
     if stop_event is None:
         stop_event = threading.Event()
 
@@ -236,16 +236,23 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
         "password": password or PG_CONFIG["password"],
     }
 
+    # If crud_users is provided, each worker picks a random user
+    # from the pool instead of using the single cfg["user"].
+    # This simulates multiple application users hitting the database.
+    crud_user_pool = list(crud_users) if crud_users else None
+
     names = [f"crud-loader-{i}" for i in range(1, app_names + 1)]
     stats_lock = threading.Lock()
     global_stats = defaultdict(lambda: {"attempted": 0, "succeeded": 0, "failed": 0})
     failed_ops = []
     failed_ops_lock = threading.Lock()
 
-    def build_connection(app_name, database):
+    def build_connection(app_name, database, crud_user=None):
+        u = crud_user["user"] if crud_user else cfg["user"]
+        pwd = crud_user["password"] if crud_user else cfg["password"]
         conn = psycopg2.connect(
-            host=cfg["host"], port=cfg["port"], user=cfg["user"],
-            password=cfg["password"], dbname=database,
+            host=cfg["host"], port=cfg["port"], user=u,
+            password=pwd, dbname=database,
             application_name=app_name, connect_timeout=5,
             options="-c statement_timeout=30000",
         )
@@ -257,6 +264,9 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
         deadline = time.time() + duration
         local_stats = defaultdict(lambda: {"attempted": 0, "succeeded": 0, "failed": 0})
         count = 0
+        # Assign a random CRUD user to this worker
+        my_crud_user = random.choice(crud_user_pool) if crud_user_pool else None
+        my_user_label = my_crud_user["user"] if my_crud_user else cfg["user"]
 
         while not stop_event.is_set() and time.time() < deadline:
             count += 1
@@ -285,7 +295,7 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
             cmd_entry = command_log.add("PG CRUD", f"[{database}] {op['label']} | {fn_preview[:120]}")
 
             try:
-                conn = build_connection(app_name, database)
+                conn = build_connection(app_name, database, my_crud_user)
                 cursor = conn.cursor()
                 cursor.execute(op["fn"], params)
                 try:
@@ -300,11 +310,12 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
                 err_msg = str(e)
                 local_stats[key]["failed"] += 1
                 command_log.fail(cmd_entry, err_msg)
-                logger.warning("PG CRUD fail [%s] %s: %s", database, op["label"], err_msg)
+                logger.warning("PG CRUD fail [%s] %s [user=%s]: %s", database, op["label"], my_user_label, err_msg)
                 with failed_ops_lock:
                     failed_ops.append({
                         "db": database, "op": op["label"], "error": err_msg,
                         "thread": thread_id, "time": datetime.now().strftime("%H:%M:%S"),
+                        "user": my_user_label,
                     })
             finally:
                 if conn:
@@ -317,6 +328,7 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
                 status_callback({
                     "db": database, "op": op["label"],
                     "success": success, "thread": thread_id, "app": app_name,
+                    "user": my_user_label,
                 })
             time.sleep(random.uniform(0.01, 0.05))
 
@@ -343,6 +355,9 @@ def run_pg_crud(seconds, threads, app_names, host=None, port=None, user=None, pa
         stop_event.set()
 
     stop_event.set()
+    # Wait for all workers to finish merging local_stats into global_stats
+    for t in thread_list:
+        t.join(timeout=5)
     elapsed = time.time() - start
 
     total_attempted = total_succeeded = total_failed = 0

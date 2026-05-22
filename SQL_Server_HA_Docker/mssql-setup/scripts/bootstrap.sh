@@ -17,13 +17,17 @@ log "=== SQL Server HA Bootstrap starting (Node: sql$NODE_ID) ==="
 log "Configuring SA password..."
 /opt/mssql/bin/mssql-conf -n set-sa-password 2>/dev/null || true
 
-# Enable HADR
+# Enable HADR (only once — avoid duplicate [hadr] sections)
 log "Enabling HADR..."
-if [ -f /var/opt/mssql/mssql.conf ]; then
-    echo "" >> /var/opt/mssql/mssql.conf
+if grep -q '^\s*\[hadr\]' /var/opt/mssql/mssql.conf 2>/dev/null; then
+    log "[hadr] already present in mssql.conf, skipping."
+else
+    if [ -f /var/opt/mssql/mssql.conf ]; then
+        echo "" >> /var/opt/mssql/mssql.conf
+    fi
+    echo "[hadr]" >> /var/opt/mssql/mssql.conf
+    echo "hadrenabled = true" >> /var/opt/mssql/mssql.conf
 fi
-echo "[hadr]" >> /var/opt/mssql/mssql.conf
-echo "hadrenabled = true" >> /var/opt/mssql/mssql.conf
 log "mssql.conf content:"
 cat /var/opt/mssql/mssql.conf | tee -a "$LOG_FILE"
 
