@@ -1,6 +1,6 @@
 # DB HA Cluster CRUD Load Generator
 
-A cross-platform automation tool that starts two Docker-based HA database clusters (PostgreSQL Patroni and SQL Server Always On Availability Group) and provides a web UI to generate realistic CRUD traffic across all databases, plus scheduled backups.
+A cross-platform automation tool that starts two Docker-based database clusters (PostgreSQL Patroni HA and SQL Server 3-node cluster) and provides a web UI to generate realistic CRUD traffic across all databases, plus scheduled backups.
 
 ## Architecture
 
@@ -10,12 +10,13 @@ A cross-platform automation tool that starts two Docker-based HA database cluste
 │                (Self-contained launchers)                    │
 └──────────────┬──────────────────────────────┬────────────────┘
                │                              │
-     ┌─────────▼──────────┐        ┌──────────▼─────────┐
-     │ PostgreSQL HA       │        │ SQL Server HA       │
-     │ (Patroni + etcd +   │        │ (3-node AG +        │
-     │  HAProxy + Seaweed) │        │  bootstrap scripts) │
-     │ Ports: 5043,5000    │        │ Ports: 14331-14333  │
-     └─────────┬───────────┘        └──────────┬──────────┘
+      ┌─────────▼──────────┐        ┌──────────▼─────────┐
+      │ PostgreSQL HA       │        │ SQL Server 3-node  │
+      │ (Patroni + etcd +   │        │ cluster (standalone│
+      │  HAProxy + Seaweed) │        │ + Log Shipping +   │
+      │ Ports: 5043,5000    │        │  Replication)      │
+      │                     │        │ Ports: 14331-14333 │
+      └─────────┬───────────┘        └──────────┬──────────┘
                │                               │
                └───────────┬───────────────────┘
                            │
@@ -71,12 +72,14 @@ Postgres_SQLServer_Test_Servers/
 │       ├── pg_crud_load.py       # Standalone load generator (CLI)
 │       └── backup.sh
 │
-├── SQL_Server_HA_Docker/     # SQL Server Always On AG cluster
+├── SQL_Server_HA_Docker/     # SQL Server 3-node cluster
 │   ├── docker-compose.yml    # 3 SQL Server nodes + bootstrap
 │   ├── .env                  # Passwords and secrets
 │   └── mssql-setup/
-│       ├── bootstrap/        # AG setup scripts
-│       ├── scripts/          # Healthcheck, failover scripts
+│       ├── bootstrap/        # Setup scripts (certificates, endpoints,
+│       │                     #   replication, log shipping; AG scripts
+│       │                     #   exist as placeholders but are not executed)
+│       ├── scripts/          # Healthcheck, failover test scripts
 │       ├── init_databases.sql     # Schema + seed data for 5 databases
 │       └── load_test_app/         # Standalone load generator (CLI)
 │
@@ -282,15 +285,20 @@ PowerShell -ExecutionPolicy Bypass -File .\start_all.ps1 [-SkipPostgres] [-SkipS
 
 Credentials: `postgres` / `postgres123`
 
-### SQL Server (Always On AG)
+### SQL Server (3-node cluster)
 
-| Node | Port |
-|------|------|
-| sql1 | 14331 |
-| sql2 | 14332 |
-| sql3 | 14333 |
+| Node | Port | Role |
+|------|------|------|
+| sql1 | 14331 | Primary (Log Shipping primary, Replication distributor) |
+| sql2 | 14332 | Log Shipping secondary, Replication publisher |
+| sql3 | 14333 | Replication publisher |
 
 Credentials: `sa` / `S@L_2024_HADr_D0ck3r!`
+
+> **Note:** While the bootstrap configures HADR prerequisites (certificates, database mirroring endpoints, `hadr enabled = true`), the Always On Availability Group (`create-ag.sql` / `join-replicas.sql`) is **not automatically created**. The AG scripts exist in `mssql-setup/bootstrap/` and can be run manually if needed. What IS automatically configured:
+> - **Log Shipping:** `hrm_tool` database shipped from sql1 → sql2
+> - **Transactional Replication:** Publications on sql2 (`pub_hotel_booking`, `pub_e_commerce`) and sql3 (`pub_erp_system`)
+> - **Monitoring user:** `dbmonitor_user` with server-level view permissions on all 3 nodes
 
 ## Databases
 
