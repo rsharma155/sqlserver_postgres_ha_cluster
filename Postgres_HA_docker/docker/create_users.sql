@@ -36,66 +36,53 @@ CREATE USER store_manager WITH PASSWORD 'TestP@ss10!';
 
 -- =====================================================
 -- Per-database grants
--- 9 read-write users get SELECT/INSERT/UPDATE/DELETE
--- hotel_guest is read-only (SELECT only)
+-- All 10 users get full SELECT/INSERT/UPDATE/DELETE
 -- =====================================================
 
 \echo '--- Granting permissions: hotel_booking ---'
 \c hotel_booking
 GRANT CONNECT ON DATABASE hotel_booking TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 GRANT USAGE ON SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
--- hotel_guest: read-only
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO hotel_guest;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO hotel_guest;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 
 \echo '--- Granting permissions: e_commerce ---'
 \c e_commerce
 GRANT CONNECT ON DATABASE e_commerce TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 GRANT USAGE ON SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO hotel_guest;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO hotel_guest;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 
 \echo '--- Granting permissions: erp_system ---'
 \c erp_system
 GRANT CONNECT ON DATABASE erp_system TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 GRANT USAGE ON SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO hotel_guest;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO hotel_guest;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 
 \echo '--- Granting permissions: hrm_tool ---'
 \c hrm_tool
 GRANT CONNECT ON DATABASE hrm_tool TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 GRANT USAGE ON SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO hotel_guest;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO hotel_guest;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 
 \echo '--- Granting permissions: department_store ---'
 \c department_store
 GRANT CONNECT ON DATABASE department_store TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 GRANT USAGE ON SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, ecom_shopper, erp_finance, hr_recruiter, store_manager;
--- hotel_guest: read-only
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO hotel_guest;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO hotel_guest;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON SEQUENCES TO hotel_agent, ecom_manager, erp_operator, hr_manager, store_clerk, hotel_guest, ecom_shopper, erp_finance, hr_recruiter, store_manager;
 
 \c postgres
 SELECT '10 CRUD load test users created successfully.' AS status;
