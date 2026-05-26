@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -e
+# Note: pipefail is bash-specific; we'll omit it for maximum portability or ensure bash usage.
+# If running with sh -> dash, -o pipefail fails. 
+# We use #!/usr/bin/env bash to target bash specifically.
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PG_DIR="$ROOT_DIR/Postgres_HA_docker"
@@ -67,8 +70,8 @@ generate_overrides() {
 
     local pg_mem sql12_mem sql3_mem
     pg_mem=$(format_gb 2 "$scale" 0.5)
-    sql12_mem=$(format_gb 6 "$scale" 1)
-    sql3_mem=$(format_gb 4 "$scale" 1)
+    sql12_mem=$(format_gb 6 "$scale" 2)
+    sql3_mem=$(format_gb 4 "$scale" 2)
 
     local pg_etcd pg_haproxy pg_backup pg_seaweed
     pg_etcd=$(format_mb 256 "$scale" 128)
@@ -166,16 +169,29 @@ prompt_engine_choice() {
 PID_FILE="$WEB_DIR/app.pid"
 start_web_app() {
     info "  Installing Python dependencies..."
-    python3 -m pip install -r "$WEB_DIR/requirements.txt" -q 2>/dev/null || true
+    # Ensure pip is available
+    if ! python3 -m pip --version &>/dev/null; then
+        warn "  pip not found, attempting to install..."
+        sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip 2>/dev/null || true
+    fi
+    
+    python3 -m pip install -r "$WEB_DIR/requirements.txt" -q 2>/dev/null || \
+    python3 -m pip install flask pyodbc flask-cors -q 2>/dev/null || true
 
     local log_file="$WEB_DIR/app.log"
     export FLASK_APP=app.py
     export FLASK_DEBUG=0
 
     cd "$WEB_DIR"
+    # Run using python3 -m flask to ensure the installed module is used
     nohup python3 -m flask run --host=0.0.0.0 --port=5002 > "$log_file" 2>&1 &
     echo $! > "$PID_FILE"
     sleep 2
+    
+    if ! kill -0 $(cat "$PID_FILE") 2>/dev/null; then
+        err "Web app failed to start. Check logs: $log_file"
+    fi
+    
     ok "Web app starting on http://localhost:5002 (PID: $(cat "$PID_FILE"), logs: $log_file)"
     cd "$ROOT_DIR"
 }
@@ -219,10 +235,20 @@ stop_all() {
 # ── ODBC ─────────────────────────────────────────────────────────
 ensure_odbc() {
     local drivers
+    # Try pyodbc first
     drivers=$(python3 -c "import pyodbc; print([d for d in pyodbc.drivers() if 'SQL Server' in d or 'FreeTDS' in d])" 2>/dev/null || echo "[]")
     if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
         ok "ODBC driver found: $drivers"
         return 0
+    fi
+
+    # Try odbcinst on Linux
+    if command -v odbcinst &>/dev/null; then
+        drivers=$(odbcinst -q -d)
+        if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
+            ok "ODBC driver found (via odbcinst): $drivers"
+            return 0
+        fi
     fi
 
     warn "SQL Server ODBC driver not found, attempting auto-install..."
@@ -230,18 +256,19 @@ ensure_odbc() {
     # --- Linux ---
     if [[ "$(uname -s)" == "Linux" ]]; then
         if command -v curl &>/dev/null; then
-            if ! curl -sL "https://packages.microsoft.com/keys/microsoft.asc" | sudo apt-key add - 2>/dev/null; then
-                curl -sL "https://packages.microsoft.com/keys/microsoft.asc" | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc >/dev/null 2>&1
-            fi
-            local os_version
-            os_version=$(lsb_release -rs 2>/dev/null || echo "20.04")
+            local os_id os_version
+            os_id=$(grep -oP '(?<=^ID=).+' /etc/os-release | tr -d '"')
+            os_version=$(lsb_release -rs 2>/dev/null || grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '"' || echo "20.04")
+
             if grep -qi "alpine" /etc/os-release 2>/dev/null; then
                 sudo apk add --no-cache msodbcsql18 unixodbc-dev 2>/dev/null || true
             elif command -v apt-get &>/dev/null; then
-                local release_codename
-                release_codename=$(lsb_release -cs 2>/dev/null || echo "focal")
+                # Modern GPG key handling for Debian/Ubuntu
+                curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /usr/share/keyrings/microsoft-prod.gpg >/dev/null
                 sudo bash -c "curl -sL https://packages.microsoft.com/config/ubuntu/${os_version}/prod.list > /etc/apt/sources.list.d/mssql-release.list"
-                sudo apt-get update -qq && sudo ACCEPT_EULA=Y apt-get install -y -qq msodbcsql18 2>/dev/null || true
+                # Update the source list to use the keyring
+                sudo sed -i "s|deb \[|deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg |" /etc/apt/sources.list.d/mssql-release.list
+                sudo apt-get update -qq && sudo ACCEPT_EULA=Y apt-get install -y -qq msodbcsql18 unixodbc 2>/dev/null || true
             elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
                 local pkg_manager
                 pkg_manager=$(command -v dnf || command -v yum)
@@ -258,6 +285,16 @@ ensure_odbc() {
         fi
     fi
 
+    # Re-verify with odbcinst
+    if command -v odbcinst &>/dev/null; then
+        drivers=$(odbcinst -q -d)
+        if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
+            ok "ODBC driver installed: $drivers"
+            return 0
+        fi
+    fi
+
+    # Final check with pyodbc
     drivers=$(python3 -c "import pyodbc; print([d for d in pyodbc.drivers() if 'SQL Server' in d or 'FreeTDS' in d])" 2>/dev/null || echo "[]")
     if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
         ok "ODBC driver installed: $drivers"
@@ -304,7 +341,7 @@ fi
 # 1. PostgreSQL
 if ! $SKIP_PG; then
     info "[1/3] Starting PostgreSQL HA Cluster (Patroni)..."
-    cd "$PG_DIR" && docker compose up -d && cd "$ROOT_DIR"
+    cd "$PG_DIR" && docker compose up -d --build && cd "$ROOT_DIR"
     ok "PostgreSQL HA cluster started"
     echo ""
 fi
@@ -312,7 +349,7 @@ fi
 # 2. SQL Server
 if ! $SKIP_SQL; then
     info "[2/3] Starting SQL Server HA Cluster..."
-    cd "$SQL_DIR" && docker compose up -d && cd "$ROOT_DIR"
+    cd "$SQL_DIR" && docker compose up -d --build && cd "$ROOT_DIR"
     ok "SQL Server HA cluster started"
     echo ""
 fi

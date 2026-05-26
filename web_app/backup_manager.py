@@ -53,16 +53,21 @@ class BackupManager:
         self._mssql_last = None
         self._pg_log = []
         self._mssql_log = []
+        self._pg_fake = False
+        self._mssql_fake = False
 
     # ── PostgreSQL WAL Archive ──────────────────────────────────
 
     def _pg_loop(self):
         self._pg_running = True
-        logger.info("PG WAL archive loop started (interval=%ds)", self._pg_interval)
+        logger.info("PG WAL archive loop started (interval=%ds, fake=%s)", self._pg_interval, self._pg_fake)
         try:
             while not self._stop_pg.is_set():
                 try:
-                    result = self._run_pg_archive()
+                    if self._pg_fake:
+                        result = self._run_pg_fake_backup()
+                    else:
+                        result = self._run_pg_archive()
                     self._pg_last = datetime.now()
                     self._pg_log.append(f"[{self._pg_last}] WAL archive: {result}")
                     logger.info("PG WAL archive completed: %s", result)
@@ -93,11 +98,33 @@ class BackupManager:
         size = os.path.getsize(archive_file)
         return f"Archived to {archive_file} ({size} bytes)"
 
-    def start_pg_archive(self, interval_seconds=300):
+    def _run_pg_fake_backup(self):
+        """Simulate a backup by dumping all databases to /dev/null."""
+        from config import DATABASES
+        results = []
+        for db in DATABASES:
+            # Note: We use pg_dump directed to /dev/null to simulate read load
+            shell_cmd = f"pg_dump -U postgres -d {db} > /dev/null"
+            cmd = ["docker", "exec", "patroni1", "bash", "-c", shell_cmd]
+            
+            cmd_entry = command_log.add("Backup (Fake)", f"docker exec patroni1 {shell_cmd}")
+            try:
+                _run_cmd(cmd, timeout=120)
+                results.append(f"{db}: OK (to /dev/null)")
+                command_log.succeed(cmd_entry)
+            except Exception as e:
+                err = str(e)[:100]
+                results.append(f"{db}: {err}")
+                command_log.fail(cmd_entry, err)
+        
+        return "; ".join(results)
+
+    def start_pg_archive(self, interval_seconds=300, fake=False):
         if self._pg_running:
             logger.warning("PG WAL archive already running; ignoring duplicate start")
             return False
         self._pg_interval = interval_seconds
+        self._pg_fake = fake
         self._stop_pg.clear()
         self._pg_thread = threading.Thread(target=self._pg_loop, daemon=True)
         self._pg_thread.start()
@@ -111,7 +138,7 @@ class BackupManager:
 
     def _mssql_loop(self):
         self._mssql_running = True
-        logger.info("MSSQL TLOG backup loop started (interval=%ds)", self._mssql_interval)
+        logger.info("MSSQL TLOG backup loop started (interval=%ds, fake=%s)", self._mssql_interval, self._mssql_fake)
         try:
             while not self._stop_mssql.is_set():
                 try:
@@ -135,9 +162,13 @@ class BackupManager:
         for node_id in [1, 2, 3]:
             container = f"sql{node_id}"
             for db in databases:
-                backup_file = f"/var/opt/mssql/external_backup/{db}_tlog_{ts}.trn"
+                if self._mssql_fake:
+                    backup_dest = "NUL"
+                else:
+                    backup_dest = f"N'/var/opt/mssql/external_backup/{db}_tlog_{ts}.trn'"
+
                 sql = (
-                    f"BACKUP LOG [{db}] TO DISK = N'{backup_file}' "
+                    f"BACKUP LOG [{db}] TO DISK = {backup_dest} "
                     f"WITH NOFORMAT, NOINIT, NAME = N'{db}-TLOG Backup', "
                     f"SKIP, NOREWIND, NOUNLOAD, STATS = 10"
                 )
@@ -151,8 +182,9 @@ class BackupManager:
                     "-Q", sql,
                 ]
 
+                label = "Backup (Fake)" if self._mssql_fake else "Backup"
                 cmd_text = f"docker exec {container} sqlcmd -S localhost -U {MSSQL_CONFIG['sa_user']} -Q \"{sql[:100]}...\""
-                cmd_entry = command_log.add("Backup", cmd_text)
+                cmd_entry = command_log.add(label, cmd_text)
 
                 try:
                     _run_cmd(cmd, timeout=120)
@@ -165,11 +197,12 @@ class BackupManager:
 
         return "; ".join(results)
 
-    def start_mssql_backup(self, interval_seconds=300):
+    def start_mssql_backup(self, interval_seconds=300, fake=False):
         if self._mssql_running:
             logger.warning("MSSQL TLOG backup already running; ignoring duplicate start")
             return False
         self._mssql_interval = interval_seconds
+        self._mssql_fake = fake
         self._stop_mssql.clear()
         self._mssql_thread = threading.Thread(target=self._mssql_loop, daemon=True)
         self._mssql_thread.start()
@@ -185,10 +218,12 @@ class BackupManager:
         return {
             "pg_archive_running": self._pg_running and not self._stop_pg.is_set(),
             "pg_interval": self._pg_interval,
+            "pg_fake": self._pg_fake,
             "pg_last": str(self._pg_last) if self._pg_last else None,
             "pg_log": self._pg_log[-10:],
             "mssql_backup_running": self._mssql_running and not self._stop_mssql.is_set(),
             "mssql_interval": self._mssql_interval,
+            "mssql_fake": self._mssql_fake,
             "mssql_last": str(self._mssql_last) if self._mssql_last else None,
             "mssql_log": self._mssql_log[-10:],
         }

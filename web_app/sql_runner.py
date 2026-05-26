@@ -51,7 +51,7 @@ def build_conn_str(database, node="sql1"):
         f"DRIVER={{{MSSQL_CONFIG['driver']}}};"
         f"SERVER={info['host']},{info['port']};"
         f"UID={MSSQL_CONFIG['sa_user']};PWD={MSSQL_CONFIG['sa_password']};"
-        f"Database={database};TrustServerCertificate=yes;"
+        f"Database={database};TrustServerCertificate=yes;Encrypt=no;"
         f"ConnectRetryCount=3;ConnectRetryInterval=5;"
         f"LoginTimeout=30;"
     )

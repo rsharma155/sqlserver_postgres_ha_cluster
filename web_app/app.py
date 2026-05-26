@@ -372,11 +372,13 @@ def backup_status():
 @app.route("/backup/start_pg", methods=["POST"])
 def start_pg_backup():
     try:
-        interval = int(request.json.get("interval", 300))
-        backup_manager.start_pg_archive(interval)
-        logger.info("PG WAL archiving started | interval=%ds", interval)
-        command_log.add("System", f"PG WAL archiving started (interval={interval}s)")
-        return jsonify({"status": "started", "interval": interval})
+        data = request.get_json() or {}
+        interval = int(data.get("interval", 300))
+        fake = data.get("fake", False)
+        backup_manager.start_pg_archive(interval, fake=fake)
+        logger.info("PG WAL archiving started | interval=%ds fake=%s", interval, fake)
+        command_log.add("System", f"PG WAL archiving started (interval={interval}s, fake={fake})")
+        return jsonify({"status": "started", "interval": interval, "fake": fake})
     except Exception as exc:
         logger.error("start_pg_backup failed: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500
@@ -397,11 +399,13 @@ def stop_pg_backup():
 @app.route("/backup/start_mssql", methods=["POST"])
 def start_mssql_backup():
     try:
-        interval = int(request.json.get("interval", 300))
-        backup_manager.start_mssql_backup(interval)
-        logger.info("MSSQL TLOG backup started | interval=%ds", interval)
-        command_log.add("System", f"MSSQL TLOG backup started (interval={interval}s)")
-        return jsonify({"status": "started", "interval": interval})
+        data = request.get_json() or {}
+        interval = int(data.get("interval", 300))
+        fake = data.get("fake", False)
+        backup_manager.start_mssql_backup(interval, fake=fake)
+        logger.info("MSSQL TLOG backup started | interval=%ds fake=%s", interval, fake)
+        command_log.add("System", f"MSSQL TLOG backup started (interval={interval}s, fake={fake})")
+        return jsonify({"status": "started", "interval": interval, "fake": fake})
     except Exception as exc:
         logger.error("start_mssql_backup failed: %s", exc, exc_info=True)
         return jsonify({"error": str(exc)}), 500

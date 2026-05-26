@@ -43,6 +43,12 @@
                     <label for="pg-interval">Interval (seconds)</label>
                     <input type="number" id="pg-interval" value="300" min="30" max="3600">
                 </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: #94a3b8;">
+                        <input type="checkbox" id="pg-fake" style="width: auto;">
+                        Fake backup (to /dev/null)
+                    </label>
+                </div>
                 <div class="btn-group">
                     <button class="btn btn-success btn-sm" onclick="startPgBackup()">&#x25B6; Start WAL Archive</button>
                     <button class="btn btn-danger btn-sm" onclick="stopPgBackup()">&#x25A0; Stop</button>
@@ -77,6 +83,12 @@
                 <div class="form-group">
                     <label for="mssql-interval">Interval (seconds)</label>
                     <input type="number" id="mssql-interval" value="300" min="30" max="3600">
+                </div>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: #94a3b8;">
+                        <input type="checkbox" id="mssql-fake" style="width: auto;">
+                        Fake backup (to NUL)
+                    </label>
                 </div>
                 <div class="btn-group">
                     <button class="btn btn-success btn-sm" onclick="startMssqlBackup()">&#x25B6; Start TLOG Backup</button>
@@ -184,11 +196,15 @@
 
         function startPgBackup() {
             const interval = document.getElementById('pg-interval').value;
+            const fake = document.getElementById('pg-fake').checked;
             fetch('/backup/start_pg', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({interval: parseInt(interval)}),
-            }).then(r => r.ok ? showToast('PG WAL archiving started', 'success') : null)
+                body: JSON.stringify({
+                    interval: parseInt(interval),
+                    fake: fake
+                }),
+            }).then(r => r.ok ? showToast('PG WAL archiving started' + (fake ? ' (FAKE)' : ''), 'success') : null)
               .then(() => updateStatus());
         }
 
@@ -200,11 +216,15 @@
 
         function startMssqlBackup() {
             const interval = document.getElementById('mssql-interval').value;
+            const fake = document.getElementById('mssql-fake').checked;
             fetch('/backup/start_mssql', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({interval: parseInt(interval)}),
-            }).then(r => r.ok ? showToast('MSSQL TLOG backup started', 'success') : null)
+                body: JSON.stringify({
+                    interval: parseInt(interval),
+                    fake: fake
+                }),
+            }).then(r => r.ok ? showToast('MSSQL TLOG backup started' + (fake ? ' (FAKE)' : ''), 'success') : null)
               .then(() => updateStatus());
         }
 

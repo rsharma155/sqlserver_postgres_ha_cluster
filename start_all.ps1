@@ -38,8 +38,8 @@ function Get-ResourceSettings {
 function Get-FallbackSettings($ramGB) {
     if ($ramGB -ge 32) { $scale = 1.0 }
     elseif ($ramGB -ge 16) { $scale = 0.5 }
-    elseif ($ramGB -ge 8) { $scale = 0.30 }
-    else { $scale = 0.15 }
+    elseif ($ramGB -ge 8) { $scale = 0.35 }
+    else { $scale = 0.25 }
 
     return [PSCustomObject]@{
         total_ram_gb           = $ramGB
@@ -49,8 +49,8 @@ function Get-FallbackSettings($ramGB) {
         pg_haproxy_mem         = "$([Math]::Max([int](128 * $scale), 64))m"
         pg_backup_mem          = "$([Math]::Max([int](512 * $scale), 256))m"
         pg_seaweed_mem         = "$([Math]::Max([int](512 * $scale), 256))m"
-        sql_node_mem           = "$([Math]::Max([Math]::Round(6 * $scale, 1), 1))g"
-        sql_node3_mem          = "$([Math]::Max([Math]::Round(4 * $scale, 1), 1))g"
+        sql_node_mem           = "$([Math]::Max([Math]::Round(6 * $scale, 1), 2))g"
+        sql_node3_mem          = "$([Math]::Max([Math]::Round(4 * $scale, 1), 2))g"
         pg_shared_buffers      = "$([Math]::Max([int](512 * $scale), 64))MB"
         pg_effective_cache_size = "$([Math]::Max([int](1536 * $scale), 192))MB"
     }
@@ -199,12 +199,28 @@ function Ensure-OdbcDriver {
 # ── Web App ─────────────────────────────────────────────────────
 function Start-WebApp {
     param([string]$ActiveEnvs = "all")
-    Write-Color "  Installing Python dependencies..." Gray
-    pip install -r (Join-Path $webDir "requirements.txt") -q 2>$null
+    Write-Color "  Checking Python dependencies..." Gray
+    
+    # Check for pip
+    try {
+        & python -m pip --version 2>$null | Out-Null
+    } catch {
+        Write-Color "  [~] pip not found. Attempting to ensure pip is installed..." Yellow
+        & python -m ensurepip --default-pip 2>$null
+    }
+
+    # Install dependencies
+    Write-Color "  Installing required packages (flask, pyodbc, etc.)..." Gray
+    try {
+        & python -m pip install -r (Join-Path $webDir "requirements.txt") -q --user 2>$null
+    } catch {
+        & python -m pip install flask pyodbc flask-cors -q --user 2>$null
+    }
 
     $pidFile = Join-Path $webDir "app.pid"
     if (Test-Path $pidFile) {
-        Stop-Process -Id (Get-Content $pidFile) -Force -ErrorAction SilentlyContinue
+        $oldPid = Get-Content $pidFile
+        Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
         Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
     }
 
@@ -213,6 +229,7 @@ function Start-WebApp {
     $env:FLASK_ENV = "development"
     $env:ACTIVE_ENVS = $ActiveEnvs
 
+    Write-Color "  Starting web app..." Gray
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "python"
     $psi.Arguments = "-m flask run --host=0.0.0.0 --port=5002"
@@ -221,17 +238,23 @@ function Start-WebApp {
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
-    $psi.EnvironmentVariables["FLASK_APP"] = "app.py"
-    $psi.EnvironmentVariables["FLASK_ENV"] = "development"
-    $psi.EnvironmentVariables["ACTIVE_ENVS"] = $ActiveEnvs
-
+    
     $proc = [System.Diagnostics.Process]::Start($psi)
     if ($proc) {
         $proc.Id | Out-File -FilePath $pidFile -Encoding ASCII
-        Start-Sleep -Seconds 2
+        Start-Sleep -Seconds 3
+        
+        # Verify it's still running
+        if ($proc.HasExited) {
+            Write-Color "  [!] Web app failed to start immediately. Check logs: $logFile" Red
+            return
+        }
+        
         Write-Color "  [+] Web app starting on http://localhost:5002" Green
         Write-Color "  [+] PID: $($proc.Id) | Logs: $logFile" Gray
-    } else { Write-Color "  [!] Failed to start web app" Red }
+    } else { 
+        Write-Color "  [!] Failed to start python process for web app" Red 
+    }
 }
 
 function Stop-WebApp {
@@ -309,13 +332,13 @@ if (-not $SkipSqlServer) { Ensure-OdbcDriver; Write-Host "" }
 
 if (-not $SkipPostgres) {
     Write-Color "[1/3] Starting PostgreSQL HA Cluster (Patroni)..." Yellow
-    Push-Location $pgDir; docker-compose up -d; Pop-Location
+    Push-Location $pgDir; docker-compose up -d --build; Pop-Location
     Write-Color "  [+] PostgreSQL HA cluster started`n" Green
 }
 
 if (-not $SkipSqlServer) {
     Write-Color "[2/3] Starting SQL Server HA Cluster..." Yellow
-    Push-Location $sqlDir; docker-compose up -d; Pop-Location
+    Push-Location $sqlDir; docker-compose up -d --build; Pop-Location
     Write-Color "  [+] SQL Server HA cluster started`n" Green
 }
 
