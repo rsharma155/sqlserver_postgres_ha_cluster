@@ -1,0 +1,11 @@
+# Optional overlay: mount the Patroni WAL archive volume for in-container backups.
+# Used by the launchers when PostgreSQL is started.
+
+services:
+  web:
+    volumes:
+      - sqloptima_wal_archive:/wal_archive:ro
+
+volumes:
+  sqloptima_wal_archive:
+    external: true

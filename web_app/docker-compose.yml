@@ -1,0 +1,36 @@
+name: sqloptima_web
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sqloptima-web:latest
+    container_name: sqloptima_web
+    ports:
+      - "5002:5002"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      FLASK_APP: app.py
+      FLASK_DEBUG: "0"
+      ACTIVE_ENVS: ${ACTIVE_ENVS:-all}
+      PG_HOST: ${PG_HOST:-host.docker.internal}
+      PG_PORT: ${PG_PORT:-5000}
+      PG_USER: ${PG_USER:-postgres}
+      PG_PASSWORD: ${PG_PASSWORD:-postgres123}
+      MSSQL_SQL1_HOST: ${MSSQL_SQL1_HOST:-host.docker.internal}
+      MSSQL_SQL1_PORT: ${MSSQL_SQL1_PORT:-14331}
+      MSSQL_SQL2_HOST: ${MSSQL_SQL2_HOST:-host.docker.internal}
+      MSSQL_SQL2_PORT: ${MSSQL_SQL2_PORT:-14332}
+      MSSQL_SQL3_HOST: ${MSSQL_SQL3_HOST:-host.docker.internal}
+      MSSQL_SQL3_PORT: ${MSSQL_SQL3_PORT:-14333}
+      MSSQL_SA_USER: ${MSSQL_SA_USER:-sa}
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:-S@L_2024_HADr_D0ck3r!}
+      MSSQL_DRIVER: ${MSSQL_DRIVER:-ODBC Driver 18 for SQL Server}
+      BACKUP_DIR: /app/backups
+    volumes:
+      - ./reports:/app/reports
+      - ./backups:/app/backups
+    restart: unless-stopped
+    mem_limit: 512m

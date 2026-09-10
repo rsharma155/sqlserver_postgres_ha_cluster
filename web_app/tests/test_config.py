@@ -13,7 +13,7 @@ def test_databases_list():
 def test_pg_config_defaults():
     from config import PG_CONFIG
     assert PG_CONFIG["host"] == "localhost"
-    assert PG_CONFIG["port"] == 5043
+    assert PG_CONFIG["port"] == 5000
     assert PG_CONFIG["user"] == "postgres"
     assert PG_CONFIG["password"] == "postgres123"
 

@@ -19,7 +19,7 @@ function Write-Color($text, $color) {
 # ── Resource Advisor ─────────────────────────────────────────────
 function Get-ResourceSettings {
     $pyScript = Join-Path $webDir "resource_advisor.py"
-    if (Test-Path $pyScript) {
+    if ((Test-Path $pyScript) -and (Get-Command python -ErrorAction SilentlyContinue)) {
         try {
             $json = & python $pyScript 2>$null
             if ($json) { return $json | ConvertFrom-Json }
@@ -133,137 +133,35 @@ function Prompt-EngineChoice {
     }
 }
 
-# ── ODBC Driver check & auto-install (Windows) ─────────────────
-function Ensure-OdbcDriver {
-    Write-Color "  Checking SQL Server ODBC driver..." Cyan
-    $drivers = @()
-    try {
-        $regPath = "HKLM:\SOFTWARE\ODBC\ODBCINST.INI\ODBC Drivers"
-        $drivers = Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue |
-            Get-Member -MemberType NoteProperty | ForEach-Object { $_.Name }
-    } catch {}
-
-    foreach ($candidate in @("ODBC Driver 18 for SQL Server", "ODBC Driver 17 for SQL Server",
-                             "ODBC Driver 13.1 for SQL Server", "ODBC Driver 13 for SQL Server",
-                             "ODBC Driver 11 for SQL Server")) {
-        if ($drivers -contains $candidate) {
-            Write-Color "  [+] SQL Server ODBC driver found: $candidate" Green
-            return $true
-        }
+# ── Web app (Docker) ────────────────────────────────────────────
+function Get-WebComposeArgs {
+    $files = @("-f", (Join-Path $webDir "docker-compose.yml"))
+    docker volume inspect sqloptima_wal_archive 2>$null | Out-Null
+    if ((-not $SkipPostgres) -and ($LASTEXITCODE -eq 0)) {
+        $files += @("-f", (Join-Path $webDir "docker-compose.pg.yml"))
     }
-    try {
-        $pyCheck = & python -c "import pyodbc; print([d for d in pyodbc.drivers() if 'SQL Server' in d or 'FreeTDS' in d])" 2>&1
-        if ($pyCheck -match "SQL Server|FreeTDS") {
-            Write-Color "  [+] SQL Server ODBC driver found (via pyodbc): $pyCheck" Green
-            return $true
-        }
-    } catch {}
-
-    Write-Color "  [~] SQL Server ODBC driver not found. Attempting auto-install..." Yellow
-    try {
-        $wingetCheck = winget list Microsoft.ODBCDriver18 --accept-source-agreements 2>&1
-        if ($wingetCheck -match "Microsoft.ODBCDriver18") {
-            Write-Color "  [+] ODBC Driver 18 already installed (winget)" Green
-            return $true
-        }
-    } catch {}
-    try {
-        Write-Color "  Installing ODBC Driver 18 via winget..." Yellow
-        $proc = Start-Process -FilePath "winget" -ArgumentList "install Microsoft.ODBCDriver18 --accept-source-agreements --accept-package-agreements --silent" -Wait -PassThru -NoNewWindow
-        if ($proc.ExitCode -eq 0) {
-            Write-Color "  [+] ODBC Driver 18 installed successfully" Green
-            return $true
-        }
-    } catch { Write-Color "  winget failed, trying direct download..." Yellow }
-
-    $msiPath = Join-Path $env:TEMP "msodbcsql.msi"
-    $downloadUrl = "https://go.microsoft.com/fwlink/?linkid=2293326&clcid=0x409&culture=en-us&country=us"
-    try {
-        Write-Color "  Downloading ODBC Driver 18 installer..." Yellow
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $msiPath -UseBasicParsing -ErrorAction Stop
-        Write-Color "  Running installer..." Yellow
-        $proc = Start-Process -FilePath "msiexec" -ArgumentList "/i `"$msiPath`" /quiet /norestart IACCEPTMSODBCSQLLICENSETERMS=YES" -Wait -PassThru -NoNewWindow
-        if ($proc.ExitCode -eq 0) {
-            Write-Color "  [+] ODBC Driver 18 installed successfully" Green
-            Remove-Item $msiPath -Force -ErrorAction SilentlyContinue
-            return $true
-        }
-    } catch { Write-Color "  [!] Install failed: $_" Red }
-    finally { Remove-Item $msiPath -Force -ErrorAction SilentlyContinue }
-
-    Write-Color "  [!] Could not auto-install ODBC Driver 18." Red
-    Write-Color "  [!] Download from: https://go.microsoft.com/fwlink/?linkid=2293326" Red
-    return $false
+    return $files
 }
 
-# ── Web App ─────────────────────────────────────────────────────
 function Start-WebApp {
     param([string]$ActiveEnvs = "all")
-    Write-Color "  Checking Python dependencies..." Gray
-    
-    # Check for pip
-    try {
-        & python -m pip --version 2>$null | Out-Null
-    } catch {
-        Write-Color "  [~] pip not found. Attempting to ensure pip is installed..." Yellow
-        & python -m ensurepip --default-pip 2>$null
-    }
-
-    # Install dependencies
-    Write-Color "  Installing required packages (flask, pyodbc, etc.)..." Gray
-    try {
-        & python -m pip install -r (Join-Path $webDir "requirements.txt") -q --user 2>$null
-    } catch {
-        & python -m pip install flask pyodbc flask-cors -q --user 2>$null
-    }
-
-    $pidFile = Join-Path $webDir "app.pid"
-    if (Test-Path $pidFile) {
-        $oldPid = Get-Content $pidFile
-        Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
-        Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-    }
-
-    $logFile = Join-Path $webDir "app.log"
-    $env:FLASK_APP = "app.py"
-    $env:FLASK_ENV = "development"
     $env:ACTIVE_ENVS = $ActiveEnvs
-
-    Write-Color "  Starting web app..." Gray
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "python"
-    $psi.Arguments = "-m flask run --host=0.0.0.0 --port=5002"
-    $psi.WorkingDirectory = $webDir
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    
-    $proc = [System.Diagnostics.Process]::Start($psi)
-    if ($proc) {
-        $proc.Id | Out-File -FilePath $pidFile -Encoding ASCII
-        Start-Sleep -Seconds 3
-        
-        # Verify it's still running
-        if ($proc.HasExited) {
-            Write-Color "  [!] Web app failed to start immediately. Check logs: $logFile" Red
-            return
-        }
-        
-        Write-Color "  [+] Web app starting on http://localhost:5002" Green
-        Write-Color "  [+] PID: $($proc.Id) | Logs: $logFile" Gray
-    } else { 
-        Write-Color "  [!] Failed to start python process for web app" Red 
+    Write-Color "  Building and starting web app container..." Gray
+    $files = Get-WebComposeArgs
+    docker compose @files up -d --build
+    Start-Sleep -Seconds 2
+    $running = docker ps --format "{{.Names}}" | Select-String -Pattern "^sqloptima_web$"
+    if ($running) {
+        Write-Color "  [+] Web app starting on http://localhost:5002 (container: sqloptima_web)" Green
+    } else {
+        Write-Color "  [!] Web app container failed to start. Check: docker logs sqloptima_web" Red
     }
 }
 
 function Stop-WebApp {
-    $pidFile = Join-Path $webDir "app.pid"
-    if (Test-Path $pidFile) {
-        Stop-Process -Id (Get-Content $pidFile) -Force -ErrorAction SilentlyContinue
-        Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
-        Write-Color "  [+] Web app stopped" Green
-    }
+    docker compose -f (Join-Path $webDir "docker-compose.yml") down 2>$null | Out-Null
+    docker rm -f sqloptima_web 2>$null | Out-Null
+    Write-Color "  [+] Web app stopped" Green
 }
 
 function Show-Status {
@@ -272,22 +170,20 @@ function Show-Status {
         $name = $pair[0]; $dir = $pair[1]
         Write-Color "  $($name):" White
         Push-Location $dir
-        docker-compose ps 2>$null | Select-Object -Skip 2 | ForEach-Object { Write-Color "    $_" Gray }
+        docker compose ps 2>$null | Select-Object -Skip 1 | ForEach-Object { Write-Color "    $_" Gray }
         Pop-Location
     }
-    $pidFile = Join-Path $webDir "app.pid"
-    if (Test-Path $pidFile) {
-        Write-Color "  Web App: running (PID: $(Get-Content $pidFile))" Green
-    } else { Write-Color "  Web App: not running" Gray }
+    Write-Color "  Web App:" White
+    docker compose -f (Join-Path $webDir "docker-compose.yml") ps 2>$null | Select-Object -Skip 1 | ForEach-Object { Write-Color "    $_" Gray }
 }
 
 function Stop-All {
     Write-Color "`n=== Stopping All Servers ===" Cyan
-    Write-Color "  Stopping PostgreSQL HA..." Gray
-    Push-Location $pgDir; docker-compose down 2>$null; Pop-Location
-    Write-Color "  Stopping SQL Server HA..." Gray
-    Push-Location $sqlDir; docker-compose down 2>$null; Pop-Location
     Stop-WebApp
+    Write-Color "  Stopping PostgreSQL HA..." Gray
+    Push-Location $pgDir; docker compose down 2>$null; Pop-Location
+    Write-Color "  Stopping SQL Server HA..." Gray
+    Push-Location $sqlDir; docker compose down 2>$null; Pop-Location
     Remove-OverrideFiles
     Write-Color "`n[+] All servers stopped" Green
 }
@@ -315,7 +211,6 @@ Write-Color "`n=== Resource Detection ===" Cyan
 $settings = Get-ResourceSettings
 Show-ResourcePlan $settings
 
-# Generate override files for engines that will be started
 if (-not $SkipPostgres) {
     Generate-PgOverride $settings
 }
@@ -328,17 +223,15 @@ Write-Host ""
 docker info 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Color "  [!] Docker is not running." Red; exit 1 }
 
-if (-not $SkipSqlServer) { Ensure-OdbcDriver; Write-Host "" }
-
 if (-not $SkipPostgres) {
     Write-Color "[1/3] Starting PostgreSQL HA Cluster (Patroni)..." Yellow
-    Push-Location $pgDir; docker-compose up -d --build; Pop-Location
+    Push-Location $pgDir; docker compose up -d --build; Pop-Location
     Write-Color "  [+] PostgreSQL HA cluster started`n" Green
 }
 
 if (-not $SkipSqlServer) {
     Write-Color "[2/3] Starting SQL Server HA Cluster..." Yellow
-    Push-Location $sqlDir; docker-compose up -d --build; Pop-Location
+    Push-Location $sqlDir; docker compose up -d --build; Pop-Location
     Write-Color "  [+] SQL Server HA cluster started`n" Green
 }
 
@@ -355,6 +248,7 @@ Write-Color "============================================" Cyan
 Write-Host ""
 
 if (-not $NoWebApp) {
+    $env:ACTIVE_ENVS = $activeEnvs
     if ($Background) {
         Write-Color "[3/3] Starting CRUD Web App (background mode)..." Yellow
         Start-WebApp -ActiveEnvs $activeEnvs
@@ -363,17 +257,10 @@ if (-not $NoWebApp) {
     } else {
         Write-Color "[3/3] Starting CRUD Web App (foreground mode)..." Yellow
         Write-Color "  Open http://localhost:5002 in your browser." White
-        Write-Color "  Press Ctrl+C to stop the web app (containers keep running)." Yellow
+        Write-Color "  Press Ctrl+C to stop the web app (database containers keep running)." Yellow
         Write-Host "---"
-        $env:FLASK_APP = "app.py"
-        $env:FLASK_ENV = "development"
-        $env:ACTIVE_ENVS = $activeEnvs
-        Push-Location $webDir
-        try {
-            & python -m flask run --host=0.0.0.0 --port=5002
-        } finally {
-            Pop-Location
-        }
+        $files = Get-WebComposeArgs
+        docker compose @files up --build
         Write-Host ""
         Write-Color "Web app stopped." Yellow
         Write-Color "Containers are still running. To stop them:" Gray
