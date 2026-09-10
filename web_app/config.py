@@ -11,8 +11,9 @@ Key features:
   - All database names shared across both engines.
 
 Environment variables (all optional):
-  PG_HOST, PG_PORT, PG_USER, PG_PASSWORD
+  PG_HOST, PG_PORT, PG_USER, PG_PASSWORD, PG_HAPROXY_HOST
   MSSQL_SA_USER, MSSQL_SA_PASSWORD, MSSQL_DRIVER
+  MSSQL_SQLn_HOST, MSSQL_SQLn_PORT  (n = 1, 2, 3)
   BACKUP_DIR
 """
 
@@ -22,21 +23,32 @@ import subprocess
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+_DEFAULT_PG_HOST = os.getenv("PG_HOST", "localhost")
+
 PG_CONFIG = {
-    "host": os.getenv("PG_HOST", "localhost"),
+    "host": _DEFAULT_PG_HOST,
     "port": int(os.getenv("PG_PORT", "5000")),
     "user": os.getenv("PG_USER", "postgres"),
     "password": os.getenv("PG_PASSWORD", "postgres123"),
-    "haproxy_host": "127.0.0.1",
-    "haproxy_port_write": 5000,
-    "haproxy_port_read": 5001,
+    "haproxy_host": os.getenv("PG_HAPROXY_HOST", _DEFAULT_PG_HOST if _DEFAULT_PG_HOST != "localhost" else "127.0.0.1"),
+    "haproxy_port_write": int(os.getenv("PG_PORT", "5000")),
+    "haproxy_port_read": int(os.getenv("PG_HAPROXY_PORT_READ", "5001")),
 }
 
 MSSQL_CONFIG = {
     "nodes": {
-        "sql1": {"host": "127.0.0.1", "port": 14331},
-        "sql2": {"host": "127.0.0.1", "port": 14332},
-        "sql3": {"host": "127.0.0.1", "port": 14333},
+        "sql1": {
+            "host": os.getenv("MSSQL_SQL1_HOST", "127.0.0.1"),
+            "port": int(os.getenv("MSSQL_SQL1_PORT", "14331")),
+        },
+        "sql2": {
+            "host": os.getenv("MSSQL_SQL2_HOST", "127.0.0.1"),
+            "port": int(os.getenv("MSSQL_SQL2_PORT", "14332")),
+        },
+        "sql3": {
+            "host": os.getenv("MSSQL_SQL3_HOST", "127.0.0.1"),
+            "port": int(os.getenv("MSSQL_SQL3_PORT", "14333")),
+        },
     },
     "driver": os.getenv("MSSQL_DRIVER", None),
     "sa_user": os.getenv("MSSQL_SA_USER", "sa"),

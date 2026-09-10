@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 # Note: pipefail is bash-specific; we'll omit it for maximum portability or ensure bash usage.
-# If running with sh -> dash, -o pipefail fails. 
+# If running with sh -> dash, -o pipefail fails.
 # We use #!/usr/bin/env bash to target bash specifically.
 
 ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -37,33 +37,44 @@ done
 
 # ── Resource Advisor ────────────────────────────────────────────
 get_total_ram_gb() {
-    local ram_kb
+    local ram_kb ram_bytes
     if [[ "$(uname -s)" == "Darwin" ]]; then
-        ram_kb=$(sysctl hw.memsize | awk '{print $2}')
-        ram_kb=$(( ram_kb / 1024 ))
+        ram_bytes=$(sysctl -n hw.memsize 2>/dev/null || sysctl hw.memsize | awk '{print $2}')
+        ram_kb=$(( ram_bytes / 1024 ))
     else
         ram_kb=$(awk '/MemTotal/ {print $2}' /proc/meminfo 2>/dev/null)
     fi
-    if [[ -z "$ram_kb" ]]; then
+    if [[ -z "$ram_kb" || "$ram_kb" -eq 0 ]]; then
         echo "8.0"
         return
     fi
-    python3 -c "print(round($ram_kb / (1024*1024), 1))"
+    awk -v k="$ram_kb" 'BEGIN { printf "%.1f\n", k / (1024 * 1024) }'
 }
 
 compute_scale() {
-    local ram="$1"
-    python3 -c "
-ram = float('$ram')
-if ram >= 32: print(1.0)
-elif ram >= 16: print(0.5)
-elif ram >= 8: print(0.30)
-else: print(0.15)
-"
+    awk -v ram="$1" 'BEGIN {
+        if (ram >= 32) print "1.0";
+        else if (ram >= 16) print "0.5";
+        else if (ram >= 8) print "0.30";
+        else print "0.15";
+    }'
 }
 
-format_gb() { python3 -c "print(str(max(round($1 * $2, 1), $3)) + 'g')"; }
-format_mb() { python3 -c "print(str(max(int($1 * $2), $3)) + 'm')"; }
+format_gb() {
+    awk -v base="$1" -v scale="$2" -v min="$3" 'BEGIN {
+        v = base * scale;
+        if (v < min) v = min;
+        printf "%.1fg\n", v;
+    }'
+}
+
+format_mb() {
+    awk -v base="$1" -v scale="$2" -v min="$3" 'BEGIN {
+        v = int(base * scale);
+        if (v < min) v = min;
+        printf "%dm\n", v;
+    }'
+}
 
 generate_overrides() {
     local scale="$1"
@@ -155,7 +166,12 @@ prompt_engine_choice() {
     echo "    [3] SQL Server only"
     echo "    [4] Exit"
     echo ""
-    read -r -p "  Enter choice (1-4): " choice
+    # Read from the real terminal so this still works when launched via curl | bash
+    if [[ -e /dev/tty ]]; then
+        read -r -p "  Enter choice (1-4): " choice </dev/tty
+    else
+        read -r -p "  Enter choice (1-4): " choice
+    fi
     case "$choice" in
         1) SKIP_PG=false; SKIP_SQL=false ;;
         2) SKIP_PG=false; SKIP_SQL=true ;;
@@ -165,47 +181,29 @@ prompt_engine_choice() {
     esac
 }
 
-# ── PID helpers ─────────────────────────────────────────────────
-PID_FILE="$WEB_DIR/app.pid"
+# ── Web app (Docker) ────────────────────────────────────────────
+web_compose() {
+    local files=(-f "$WEB_DIR/docker-compose.yml")
+    if ! $SKIP_PG && docker volume inspect sqloptima_wal_archive >/dev/null 2>&1; then
+        files+=(-f "$WEB_DIR/docker-compose.pg.yml")
+    fi
+    docker compose "${files[@]}" "$@"
+}
+
 start_web_app() {
-    info "  Installing Python dependencies..."
-    # Ensure pip is available
-    if ! python3 -m pip --version &>/dev/null; then
-        warn "  pip not found, attempting to install..."
-        sudo apt-get update -qq && sudo apt-get install -y -qq python3-pip 2>/dev/null || true
-    fi
-    
-    python3 -m pip install -r "$WEB_DIR/requirements.txt" -q 2>/dev/null || \
-    python3 -m pip install flask pyodbc flask-cors -q 2>/dev/null || true
-
-    local log_file="$WEB_DIR/app.log"
-    export FLASK_APP=app.py
-    export FLASK_DEBUG=0
-
-    cd "$WEB_DIR"
-    # Run using python3 -m flask to ensure the installed module is used
-    nohup python3 -m flask run --host=0.0.0.0 --port=5002 > "$log_file" 2>&1 &
-    echo $! > "$PID_FILE"
+    info "  Building and starting web app container..."
+    web_compose up -d --build
     sleep 2
-    
-    if ! kill -0 $(cat "$PID_FILE") 2>/dev/null; then
-        err "Web app failed to start. Check logs: $log_file"
+    if docker ps --format '{{.Names}}' | grep -qx sqloptima_web; then
+        ok "Web app starting on http://localhost:5002 (container: sqloptima_web)"
+    else
+        err "Web app container failed to start. Check: docker logs sqloptima_web"
     fi
-    
-    ok "Web app starting on http://localhost:5002 (PID: $(cat "$PID_FILE"), logs: $log_file)"
-    cd "$ROOT_DIR"
 }
 
 stop_web_app() {
-    if [[ -f "$PID_FILE" ]]; then
-        local pid
-        pid=$(cat "$PID_FILE")
-        kill "$pid" 2>/dev/null || true
-        rm -f "$PID_FILE"
-        ok "Web app stopped"
-    else
-        warn "Web app PID file not found"
-    fi
+    docker compose -f "$WEB_DIR/docker-compose.yml" down 2>/dev/null || docker rm -f sqloptima_web 2>/dev/null || true
+    ok "Web app stopped"
 }
 
 show_status() {
@@ -214,96 +212,19 @@ show_status() {
     cd "$PG_DIR" && docker compose ps 2>/dev/null | tail -n +3 || echo "    (not running)"
     info "  SQL Server HA:"
     cd "$SQL_DIR" && docker compose ps 2>/dev/null | tail -n +3 || echo "    (not running)"
-    if [[ -f "$PID_FILE" ]]; then
-        ok "Web App: running (PID: $(cat "$PID_FILE"))"
-    else
-        warn "Web App: not running"
-    fi
+    info "  Web App:"
+    docker compose -f "$WEB_DIR/docker-compose.yml" ps 2>/dev/null | tail -n +2 || echo "    (not running)"
 }
 
 stop_all() {
     info "=== Stopping All Servers ==="
+    stop_web_app
     info "  Stopping PostgreSQL HA..."
     cd "$PG_DIR" && docker compose down 2>/dev/null || true
     info "  Stopping SQL Server HA..."
     cd "$SQL_DIR" && docker compose down 2>/dev/null || true
-    stop_web_app
     remove_overrides
     ok "All servers stopped"
-}
-
-# ── ODBC ─────────────────────────────────────────────────────────
-ensure_odbc() {
-    local drivers
-    # Try pyodbc first
-    drivers=$(python3 -c "import pyodbc; print([d for d in pyodbc.drivers() if 'SQL Server' in d or 'FreeTDS' in d])" 2>/dev/null || echo "[]")
-    if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
-        ok "ODBC driver found: $drivers"
-        return 0
-    fi
-
-    # Try odbcinst on Linux
-    if command -v odbcinst &>/dev/null; then
-        drivers=$(odbcinst -q -d)
-        if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
-            ok "ODBC driver found (via odbcinst): $drivers"
-            return 0
-        fi
-    fi
-
-    warn "SQL Server ODBC driver not found, attempting auto-install..."
-
-    # --- Linux ---
-    if [[ "$(uname -s)" == "Linux" ]]; then
-        if command -v curl &>/dev/null; then
-            local os_id os_version
-            os_id=$(grep -oP '(?<=^ID=).+' /etc/os-release | tr -d '"')
-            os_version=$(lsb_release -rs 2>/dev/null || grep -oP '(?<=^VERSION_ID=).+' /etc/os-release | tr -d '"' || echo "20.04")
-
-            if grep -qi "alpine" /etc/os-release 2>/dev/null; then
-                sudo apk add --no-cache msodbcsql18 unixodbc-dev 2>/dev/null || true
-            elif command -v apt-get &>/dev/null; then
-                # Modern GPG key handling for Debian/Ubuntu
-                curl -sL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /usr/share/keyrings/microsoft-prod.gpg >/dev/null
-                sudo bash -c "curl -sL https://packages.microsoft.com/config/ubuntu/${os_version}/prod.list > /etc/apt/sources.list.d/mssql-release.list"
-                # Update the source list to use the keyring
-                sudo sed -i "s|deb \[|deb [signed-by=/usr/share/keyrings/microsoft-prod.gpg |" /etc/apt/sources.list.d/mssql-release.list
-                sudo apt-get update -qq && sudo ACCEPT_EULA=Y apt-get install -y -qq msodbcsql18 unixodbc 2>/dev/null || true
-            elif command -v yum &>/dev/null || command -v dnf &>/dev/null; then
-                local pkg_manager
-                pkg_manager=$(command -v dnf || command -v yum)
-                sudo bash -c "curl -sL https://packages.microsoft.com/config/rhel/9/prod.repo > /etc/yum.repos.d/mssql-release.repo"
-                sudo $pkg_manager install -y -q msodbcsql18 2>/dev/null || sudo ACCEPT_EULA=Y $pkg_manager install -y -q msodbcsql18 2>/dev/null || true
-            fi
-        fi
-    fi
-
-    # --- macOS ---
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-        if command -v brew &>/dev/null; then
-            brew install --cask msodbcsql18 2>/dev/null || brew install unixodbc 2>/dev/null || true
-        fi
-    fi
-
-    # Re-verify with odbcinst
-    if command -v odbcinst &>/dev/null; then
-        drivers=$(odbcinst -q -d)
-        if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
-            ok "ODBC driver installed: $drivers"
-            return 0
-        fi
-    fi
-
-    # Final check with pyodbc
-    drivers=$(python3 -c "import pyodbc; print([d for d in pyodbc.drivers() if 'SQL Server' in d or 'FreeTDS' in d])" 2>/dev/null || echo "[]")
-    if echo "$drivers" | grep -qi "SQL Server\|FreeTDS"; then
-        ok "ODBC driver installed: $drivers"
-        return 0
-    fi
-
-    err "Could not install SQL Server ODBC driver."
-    err "See: https://learn.microsoft.com/en-us/sql/connect/odbc/download-odbc-driver-for-sql-server"
-    return 1
 }
 
 # ── Main ─────────────────────────────────────────────────────────
@@ -314,8 +235,15 @@ $STOP  && { stop_all;   exit 0; }
 
 # ── Engine Selection ─────────────────────────────────────────────
 if ! $SKIP_PG && ! $SKIP_SQL; then
-    # No skip flags = interactive mode
     prompt_engine_choice
+fi
+
+if $SKIP_PG && ! $SKIP_SQL; then
+    export ACTIVE_ENVS=sqlserver
+elif $SKIP_SQL && ! $SKIP_PG; then
+    export ACTIVE_ENVS=postgres
+else
+    export ACTIVE_ENVS=all
 fi
 
 # ── Resource Detection & Override Generation ─────────────────────
@@ -327,15 +255,8 @@ show_resource_plan "$TOTAL_RAM" "$SCALE"
 generate_overrides "$SCALE"
 echo ""
 
-# ensure Docker
 if ! docker info &>/dev/null; then
     err "Docker is not running."
-fi
-
-# ODBC (unless skipping SQL Server)
-if ! $SKIP_SQL; then
-    ensure_odbc
-    echo ""
 fi
 
 # 1. PostgreSQL
@@ -354,7 +275,6 @@ if ! $SKIP_SQL; then
     echo ""
 fi
 
-# wait
 info "[*] Waiting for containers to initialize (60s)..."
 sleep 60
 
@@ -377,11 +297,9 @@ if ! $NO_WEB; then
         info "[3/3] Starting CRUD Web App (foreground mode)..."
         echo ""
         info "  Open http://localhost:5002 in your browser."
-        info "  Press Ctrl+C to stop the web app (containers keep running)."
+        info "  Press Ctrl+C to stop the web app (database containers keep running)."
         echo "---"
-        cd "$WEB_DIR"
-        FLASK_APP=app.py FLASK_DEBUG=0 python3 -m flask run --host=0.0.0.0 --port=5002
-        cd "$ROOT_DIR"
+        web_compose up --build
         echo ""
         info "Web app stopped."
         info "Containers are still running. To stop them:"

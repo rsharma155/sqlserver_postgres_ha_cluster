@@ -372,6 +372,7 @@ volumes:
   patroni2_data:
   patroni3_data:
   wal_archive:
+    name: sqloptima_wal_archive
   pg_log:
   pg_backup_data:
   seaweedfs_data:

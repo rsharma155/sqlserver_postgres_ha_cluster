@@ -21,8 +21,8 @@ A cross-platform automation tool that starts two Docker-based database clusters 
                └───────────┬───────────────────┘
                            │
               ┌────────────▼────────────┐
-              │    Flask Web App         │
-               │    http://localhost:5002 │
+              │  Flask Web App (Docker)  │
+              │  http://localhost:5002   │
               │                          │
               │  ┌──────────────────┐    │
               │  │ Environment      │    │
@@ -55,12 +55,12 @@ A cross-platform automation tool that starts two Docker-based database clusters 
 
 ```
 Postgres_SQLServer_Test_Servers/
+├── install.sh                # One-line bootstrap (Linux / macOS): curl | bash
+├── install.ps1               # One-line bootstrap (Windows): irm | iex
 ├── start_all.ps1             # Self-contained launcher (Windows PowerShell)
 ├── stop_all.ps1              # Self-contained stopper (Windows PowerShell)
 ├── start_servers.sh          # Self-contained launcher (Linux / macOS)
 ├── stop_servers.sh           # Self-contained stopper (Linux / macOS)
-├── start_all.ps1             # PowerShell launcher (Windows)
-├── stop_all.ps1              # PowerShell stopper (Windows)
 ├── README.md
 │
 ├── Postgres_HA_docker/       # PostgreSQL Patroni HA cluster
@@ -83,16 +83,18 @@ Postgres_SQLServer_Test_Servers/
 │       ├── init_databases.sql     # Schema + seed data for 5 databases
 │       └── load_test_app/         # Standalone load generator (CLI)
 │
-└── web_app/                  # Flask web application
-    ├── __init__.py
+└── web_app/                  # Flask web application (runs in Docker)
+    ├── Dockerfile            # Python + ODBC Driver 18 image
+    ├── docker-compose.yml    # Web UI on port 5002
+    ├── docker-compose.pg.yml # Optional WAL archive volume for PG backups
     ├── app.py                # Flask routes, job orchestration, report generation
-    ├── config.py             # DB config + cross-platform ODBC detection
+    ├── config.py             # DB config (env-driven hosts/ports)
     ├── pg_runner.py          # PostgreSQL CRUD generator (multi-threaded)
     ├── sql_runner.py         # SQL Server CRUD generator (multi-threaded)
     ├── backup_manager.py     # Scheduled backup service
-    ├── resource_advisor.py   # System RAM detection + recommended resource limits
+    ├── resource_advisor.py   # Optional RAM helper (launchers have fallbacks)
     ├── reports/              # Auto-generated CRUD run reports (text files)
-    ├── requirements.txt      # Python dependencies
+    ├── requirements.txt      # Python dependencies (installed in the image)
     ├── templates/
     │   ├── index.html        # Environment selection page
     │   ├── crud_config.html  # CRUD config + live log + results
@@ -105,29 +107,55 @@ Postgres_SQLServer_Test_Servers/
 
 | Requirement | Version | Purpose |
 |-------------|---------|---------|
-| Docker | 24+ | Run the HA cluster containers |
+| Docker | 24+ | Run the HA clusters **and** the web UI |
 | Docker Compose | v2+ | Orchestrate multi-container services |
-| Python | 3.8+ | Run the web app |
-| pip | 21+ | Install Python dependencies |
+
+**Python is not required on the host.** The web app image includes Python, Flask, psycopg2, pyodbc, and the Microsoft ODBC Driver 18 for SQL Server.
 
 ### ODBC Driver for SQL Server
 
-The launcher scripts **auto-detect and auto-install** the ODBC driver on all platforms. No manual installation is needed.
+ODBC 18 is installed **inside the web container** at image build time. Users do not install ODBC (or Python) on Windows, Linux, or macOS.
 
-| Platform | Auto-install method |
-|----------|-------------------|
-| **Windows** | `winget install Microsoft.ODBCDriver18` → fallback: direct `.msi` download + silent `msiexec` |
-| **Linux (Debian/Ubuntu)** | Adds Microsoft apt repo → `apt-get install -y msodbcsql18` (via `sudo`) |
-| **Linux (RHEL/Fedora)** | Adds Microsoft yum/dnf repo → `yum/dnf install -y msodbcsql18` (via `sudo`) |
-| **macOS** | `brew tap microsoft/mssql-release` → `brew install msodbcsql18` |
-
-The app also auto-detects the best available driver at runtime, falling back through versions 18→17→13→11→FreeTDS.
-
-If auto-install fails (e.g., no `sudo` access or `brew` not installed), the launcher prints a warning with manual download instructions. SQL Server CRUD will be unavailable until the driver is installed, but PostgreSQL and the web app still work.
+The app still auto-detects the best available driver if you run Flask on the host for development, falling back through versions 18→17→13→11→FreeTDS.
 
 ## Quick Start
 
-### 1. Start Everything
+### One-line install and run
+
+Copies the project to your home directory (or `HA_CLUSTER_HOME`), checks Docker, then starts the clusters and web UI.
+
+**Linux / macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rsharma155/sqlserver_postgres_ha_cluster/main/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/rsharma155/sqlserver_postgres_ha_cluster/main/install.ps1 | iex
+```
+
+Default install path: `~/sqlserver_postgres_ha_cluster` (Linux/macOS) or `%USERPROFILE%\sqlserver_postgres_ha_cluster` (Windows).
+
+```bash
+# Custom directory / branch
+HA_CLUSTER_HOME=/opt/ha-cluster HA_CLUSTER_REF=main curl -fsSL https://raw.githubusercontent.com/rsharma155/sqlserver_postgres_ha_cluster/main/install.sh | bash
+
+# Skip an engine (flags are forwarded to the launcher)
+curl -fsSL https://raw.githubusercontent.com/rsharma155/sqlserver_postgres_ha_cluster/main/install.sh | bash -s -- --skip-sql-server
+```
+
+```powershell
+# Custom directory / skip SQL Server (Windows)
+$env:HA_CLUSTER_HOME = "D:\tools\ha-cluster"
+$env:HA_CLUSTER_SKIP_SQL = "1"
+irm https://raw.githubusercontent.com/rsharma155/sqlserver_postgres_ha_cluster/main/install.ps1 | iex
+```
+
+> Requires **Docker running** and outbound access to GitHub (and Microsoft’s package feed on the first web-image build). The first run downloads container images and can take several minutes.
+
+### Already cloned? Start everything locally
 
 ```bash
 # Windows (bypass execution policy):
@@ -144,15 +172,13 @@ The launcher will:
 1. **Detect system resources** (total RAM) and compute optimal container memory limits
 2. **Prompt you to choose** which engines to start: both, PostgreSQL only, SQL Server only, or exit
 3. **Generate `docker-compose.override.yml`** files with scaled memory limits (cleaned up on `stop`)
-4. **Check & auto-install the SQL Server ODBC driver** if missing (requires `sudo` on Linux, `brew` on macOS, admin on Windows)
-5. Start selected engine(s) via `docker-compose up -d`
-6. Wait 60 seconds for containers to initialize
-7. Install Python dependencies
-8. Launch the Flask web app on `http://localhost:5002`
+4. Start selected engine(s) via `docker compose up -d`
+5. Wait 60 seconds for containers to initialize
+6. Build and start the **web app container** (`sqloptima_web`) on `http://localhost:5002`
 
-**Foreground mode (default):** The launcher stays in the console after starting, showing live Flask logs. Press **Ctrl+C** to stop the web app (containers keep running — stop them with `stop_all.ps1` / `stop_servers.sh`).
+**Foreground mode (default):** The launcher stays in the console after starting, showing live web-container logs. Press **Ctrl+C** to stop the web app (database containers keep running — stop them with `stop_all.ps1` / `stop_servers.sh`).
 
-**Background mode:** Pass `-Background` (Windows) or `--detach` (Linux/macOS) to launch the web app as a detached background process. The script exits after starting. Use the stop scripts to shut everything down.
+**Background mode:** Pass `-Background` (Windows) or `--detach` (Linux/macOS) to launch the web app container detached. The script exits after starting. Use the stop scripts to shut everything down.
 
 > **Tip:** To skip the interactive prompt, pass flags directly: `.\start_all.ps1 -SkipPostgres` or `./start_servers.sh --skip-sql-server`.
 
@@ -220,7 +246,7 @@ When launched without skip-flags, both `start_all.ps1` and `start_servers.sh` de
 
 ### How It Works
 
-1. The launcher calls `web_app/resource_advisor.py` (or uses a WMI/`/proc/meminfo` fallback) to detect total RAM
+1. The launcher detects total RAM (`/proc/meminfo` or `sysctl` on Linux/macOS; WMI on Windows)
 2. A scale factor is selected from the tier table above
 3. A `docker-compose.override.yml` file is generated in each Docker directory with scaled `mem_limit` values
 4. For PostgreSQL, Patroni environment variables `PATRONI_POSTGRESQL_PARAMETERS_SHARED_BUFFERS` and `PATRONI_POSTGRESQL_PARAMETERS_EFFECTIVE_CACHE_SIZE` are also set in the override to tune shared_buffers and effective_cache_size
@@ -242,9 +268,9 @@ PowerShell -ExecutionPolicy Bypass -File .\start_all.ps1 [-SkipPostgres] [-SkipS
 |------|-------------|
 | *(no flags)* | **Interactive mode** — prompts you to choose which engines to start: both, PostgreSQL only, SQL Server only, or exit. Then launches the web app in **foreground** (console stays open with live logs, Ctrl+C to stop) |
 | `-SkipPostgres` | Skip starting the PostgreSQL cluster (non-interactive start) |
-| `-SkipSqlServer` | Skip starting the SQL Server cluster (also skips ODBC check) |
-| `-NoWebApp` | Skip starting the Flask web app |
-| `-Background` | Launch the web app as a **detached background process** (script exits after starting). Use `stop_all.ps1` to shut down |
+| `-SkipSqlServer` | Skip starting the SQL Server cluster |
+| `-NoWebApp` | Skip starting the Flask web app container |
+| `-Background` | Launch the web app container **detached** (script exits after starting). Use `stop_all.ps1` to shut down |
 | `-Status` | Show running/stopped status of all services |
 | `-Stop` | Gracefully stop all services |
 
@@ -262,16 +288,13 @@ PowerShell -ExecutionPolicy Bypass -File .\start_all.ps1 [-SkipPostgres] [-SkipS
 |------|-------------|
 | *(no flags)* | **Interactive mode** — prompts you to choose which engines to start. Then launches the web app in **foreground** (console stays open with live logs, Ctrl+C to stop) |
 | `--skip-postgres` | Skip starting the PostgreSQL cluster (non-interactive start) |
-| `--skip-sql-server` | Skip starting the SQL Server cluster (also skips ODBC check) |
-| `--no-web-app` | Skip starting the Flask web app |
-| `--detach` | Launch the web app as a **detached background process** (script exits after starting). Use `stop_servers.sh` to shut down |
+| `--skip-sql-server` | Skip starting the SQL Server cluster |
+| `--no-web-app` | Skip starting the Flask web app container |
+| `--detach` | Launch the web app container **detached** (script exits after starting). Use `stop_servers.sh` to shut down |
 | `--status` | Show running/stopped status of all services |
 | `--stop` | Gracefully stop all services |
 
-> ODBC Driver is automatically detected and installed before the web app starts.
-> Use `--skip-sql-server` / `-SkipSqlServer` to skip both the SQL Server cluster and the ODBC check.
->
-> **Foreground vs Detached:** By default the launcher runs the web app in the foreground so you can see live logs and press Ctrl+C to stop. Pass `--detach` for the previous behavior (background process, script exits).
+> **Foreground vs Detached:** By default the launcher attaches to the web container so you can see live logs and press Ctrl+C to stop it. Pass `--detach` to run the web container in the background.
 
 ## Database Connections
 
@@ -369,12 +392,11 @@ Distribution: **R=60%, C=20%, U=20%**
 | Docker Compose | ✅ | ✅ | ✅ |
 | Flask Web App | ✅ | ✅ | ✅ |
 | PostgreSQL CRUD | ✅ | ✅ | ✅ |
-| SQL Server CRUD | ✅ (ODBC req.) | ✅ (ODBC req.) | ✅ (ODBC req.) |
+| SQL Server CRUD | ✅ | ✅ | ✅ |
 | Launcher | `start_all.ps1` | `start_servers.sh` | `start_servers.sh` |
 | Stopper | `stop_all.ps1` | `stop_servers.sh` | `stop_servers.sh` |
-| ODBC Auto-Install | `winget` / `msiexec` | `apt` / `yum` / `dnf` (via sudo) | `brew` |
-| ODBC Detection | Windows Registry + pyodbc | `odbcinst -j` + pyodbc | `odbcinst -j` + pyodbc |
-| Process Management | `taskkill` | `os.kill(SIGTERM)` | `os.kill(SIGTERM)` |
+| Web UI | `sqloptima_web` container | `sqloptima_web` container | `sqloptima_web` container |
+| ODBC | Bundled in web image | Bundled in web image | Bundled in web image |
 
 ## Environment Variables
 
@@ -382,14 +404,19 @@ All optional — defaults work with the provided Docker setups.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PG_HOST` | `localhost` | PostgreSQL host |
-| `PG_PORT` | `5043` | PostgreSQL port (direct) |
+| `PG_HOST` | `localhost` (container: `host.docker.internal`) | PostgreSQL / HAProxy host |
+| `PG_PORT` | `5000` | PostgreSQL HAProxy write port |
 | `PG_USER` | `postgres` | PostgreSQL user |
 | `PG_PASSWORD` | `postgres123` | PostgreSQL password |
+| `MSSQL_SQL1_HOST` | `127.0.0.1` (container: `host.docker.internal`) | SQL Server node 1 host |
+| `MSSQL_SQL1_PORT` | `14331` | SQL Server node 1 published port |
+| `MSSQL_SQL2_HOST` / `MSSQL_SQL2_PORT` | `127.0.0.1` / `14332` | SQL Server node 2 |
+| `MSSQL_SQL3_HOST` / `MSSQL_SQL3_PORT` | `127.0.0.1` / `14333` | SQL Server node 3 |
 | `MSSQL_SA_USER` | `sa` | SQL Server SA user |
 | `MSSQL_SA_PASSWORD` | `S@L_2024_HADr_D0ck3r!` | SQL Server SA password |
-| `MSSQL_DRIVER` | auto-detect | Force a specific ODBC driver name |
-| `BACKUP_DIR` | `web_app/backups/` | Local backup storage directory |
+| `MSSQL_DRIVER` | auto-detect (`ODBC Driver 18` in the image) | Force a specific ODBC driver name |
+| `BACKUP_DIR` | `web_app/backups/` (container: `/app/backups`) | Local backup storage directory |
+| `ACTIVE_ENVS` | `all` | `all`, `postgres`, or `sqlserver` |
 
 ## PowerShell Execution Policy
 
@@ -424,48 +451,22 @@ PowerShell -ExecutionPolicy Bypass -File .\start_all.ps1 -Status
 # View logs for a specific service
 docker logs patroni1
 docker logs sql1
+docker logs sqloptima_web
 ```
-
-### ODBC Driver not found / install failed
-```bash
-# The launcher tries auto-install first. If it fails:
-
-# 1. Install manually (requires sudo/brew admin):
-
-# Windows (admin prompt):
-winget install Microsoft.ODBCDriver18
-
-# Linux (Debian/Ubuntu):
-curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
-sudo curl -sSL https://packages.microsoft.com/config/ubuntu/22.04/prod.list -o /etc/apt/sources.list.d/mssql-release.list
-sudo apt-get update && ACCEPT_EULA=Y sudo apt-get install -y msodbcsql18
-
-# macOS:
-brew tap microsoft/mssql-release https://github.com/Microsoft/homebrew-mssql-release
-ACCEPT_EULA=Y brew install msodbcsql18
-
-# 2. List installed ODBC drivers
-python -c "import pyodbc; print(pyodbc.drivers())"
-
-# 3. Force a specific driver via env var (skip auto-detection)
-set MSSQL_DRIVER="ODBC Driver 17 for SQL Server"
-# then run:
-./start_servers.sh
-
-# 4. If you don't need SQL Server CRUD, skip it entirely:
-./start_servers.sh --skip-sql-server
-```
-
-### Port conflicts
-Edit the host port mappings in `docker-compose.yml` files if ports 14331-14333, 5000/5001 (HAProxy), 5002 (web app), or 5043-5045 are already in use.
 
 ### Web app not starting
 ```bash
-# Try running directly
-cd web_app
-pip install -r requirements.txt
-python app.py
+docker logs sqloptima_web
+docker compose -f web_app/docker-compose.yml ps
+
+# Rebuild the image
+docker compose -f web_app/docker-compose.yml up -d --build
 ```
+
+The web container reaches the databases through `host.docker.internal` on the published ports (5000, 14331–14333). If CRUD connections fail, confirm those ports are published and Docker Desktop / Engine supports `host-gateway`.
+
+### Port conflicts
+Edit the host port mappings in `docker-compose.yml` files if ports 14331-14333, 5000/5001 (HAProxy), 5002 (web app), or 5043-5045 are already in use.
 
 ## License
 

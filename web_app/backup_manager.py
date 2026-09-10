@@ -2,25 +2,22 @@
 Scheduled backup manager for both database platforms.
 
 PostgreSQL WAL archiving:
-  - Connects to the Patroni leader container via `docker exec`.
-  - Tars the /wal_archive directory into timestamped .tar.gz files.
-  - Stores archives in BACKUP_DIR/postgres/.
+  - Prefers a mounted /wal_archive volume (used when the web app runs in Docker).
+  - Falls back to `docker exec` on patroni1 when running on the host.
 
 SQL Server transaction log backups:
-  - Connects to each of the 3 SQL Server containers via `docker exec`.
-  - Runs BACKUP LOG for all 5 databases on each node.
-  - Backups go to /var/opt/mssql/external_backup/ inside the containers.
+  - Runs BACKUP LOG over pyodbc against each node.
+  - Falls back to `docker exec` + sqlcmd if pyodbc is unavailable.
 
 Both run on independent configurable intervals in daemon threads.
 Every command is logged to the in-memory command log for the live UI.
 """
 
 import os
-import sys
+import tarfile
 import threading
-import time
 from datetime import datetime
-from config import BACKUP_DIR, MSSQL_CONFIG
+from config import BACKUP_DIR, DATABASES, MSSQL_CONFIG, PG_CONFIG
 from command_log import command_log
 from app_logger import logger
 
@@ -28,6 +25,8 @@ PG_BACKUP_DIR = os.path.join(BACKUP_DIR, "postgres")
 MSSQL_BACKUP_DIR = os.path.join(BACKUP_DIR, "mssql")
 os.makedirs(PG_BACKUP_DIR, exist_ok=True)
 os.makedirs(MSSQL_BACKUP_DIR, exist_ok=True)
+
+WAL_ARCHIVE_DIR = os.getenv("WAL_ARCHIVE_DIR", "/wal_archive")
 
 
 def _run_cmd(cmd, timeout=120, capture=True):
@@ -79,14 +78,25 @@ class BackupManager:
             self._pg_running = False
 
     def _run_pg_archive(self):
-        import subprocess
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         archive_file = os.path.join(PG_BACKUP_DIR, f"wal_archive_{ts}.tar.gz")
+
+        if os.path.isdir(WAL_ARCHIVE_DIR):
+            cmd_entry = command_log.add("Backup", f"tar {WAL_ARCHIVE_DIR} -> {archive_file}")
+            try:
+                with tarfile.open(archive_file, "w:gz") as tar:
+                    tar.add(WAL_ARCHIVE_DIR, arcname=".")
+                command_log.succeed(cmd_entry)
+            except Exception as e:
+                command_log.fail(cmd_entry, str(e)[:100])
+                raise
+            size = os.path.getsize(archive_file)
+            return f"Archived to {archive_file} ({size} bytes)"
+
+        import subprocess
         shell_cmd = "tar -czf - -C /wal_archive . 2>/dev/null"
         cmd = ["docker", "exec", "patroni1", "bash", "-c", shell_cmd]
-
         cmd_entry = command_log.add("Backup", f"docker exec patroni1 bash -c \"{shell_cmd}\" > {archive_file}")
-
         with open(archive_file, "wb") as f:
             result = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, timeout=60)
             if result.returncode != 0:
@@ -94,29 +104,35 @@ class BackupManager:
                 command_log.fail(cmd_entry, err)
                 raise RuntimeError(f"docker exec failed: {err}")
             command_log.succeed(cmd_entry)
-
         size = os.path.getsize(archive_file)
         return f"Archived to {archive_file} ({size} bytes)"
 
     def _run_pg_fake_backup(self):
-        """Simulate a backup by dumping all databases to /dev/null."""
-        from config import DATABASES
+        """Simulate backup load by connecting to each database."""
+        import psycopg2
         results = []
         for db in DATABASES:
-            # Note: We use pg_dump directed to /dev/null to simulate read load
-            shell_cmd = f"pg_dump -U postgres -d {db} > /dev/null"
-            cmd = ["docker", "exec", "patroni1", "bash", "-c", shell_cmd]
-            
-            cmd_entry = command_log.add("Backup (Fake)", f"docker exec patroni1 {shell_cmd}")
+            label = f"SELECT 1 on {db} via {PG_CONFIG['host']}:{PG_CONFIG['port']}"
+            cmd_entry = command_log.add("Backup (Fake)", label)
             try:
-                _run_cmd(cmd, timeout=120)
-                results.append(f"{db}: OK (to /dev/null)")
+                conn = psycopg2.connect(
+                    host=PG_CONFIG["host"],
+                    port=PG_CONFIG["port"],
+                    user=PG_CONFIG["user"],
+                    password=PG_CONFIG["password"],
+                    dbname=db,
+                    connect_timeout=10,
+                )
+                cur = conn.cursor()
+                cur.execute("SELECT 1")
+                cur.close()
+                conn.close()
+                results.append(f"{db}: OK")
                 command_log.succeed(cmd_entry)
             except Exception as e:
                 err = str(e)[:100]
                 results.append(f"{db}: {err}")
                 command_log.fail(cmd_entry, err)
-        
         return "; ".join(results)
 
     def start_pg_archive(self, interval_seconds=300, fake=False):
@@ -154,16 +170,19 @@ class BackupManager:
             self._mssql_running = False
 
     def _run_mssql_tlog_backup(self):
-        import subprocess
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        databases = ["hotel_booking", "e_commerce", "erp_system", "hrm_tool", "department_store"]
         results = []
+        try:
+            import pyodbc
+        except ImportError:
+            pyodbc = None
 
         for node_id in [1, 2, 3]:
-            container = f"sql{node_id}"
-            for db in databases:
+            node = f"sql{node_id}"
+            info = MSSQL_CONFIG["nodes"][node]
+            for db in DATABASES:
                 if self._mssql_fake:
-                    backup_dest = "NUL"
+                    backup_dest = "N'/var/opt/mssql/external_backup/_discard.trn'"
                 else:
                     backup_dest = f"N'/var/opt/mssql/external_backup/{db}_tlog_{ts}.trn'"
 
@@ -172,8 +191,33 @@ class BackupManager:
                     f"WITH NOFORMAT, NOINIT, NAME = N'{db}-TLOG Backup', "
                     f"SKIP, NOREWIND, NOUNLOAD, STATS = 10"
                 )
+                label = "Backup (Fake)" if self._mssql_fake else "Backup"
+
+                if pyodbc is not None:
+                    cmd_text = f"BACKUP LOG [{db}] on {node} ({info['host']},{info['port']})"
+                    cmd_entry = command_log.add(label, cmd_text)
+                    try:
+                        conn_str = (
+                            f"DRIVER={{{MSSQL_CONFIG['driver']}}};"
+                            f"SERVER={info['host']},{info['port']};"
+                            f"UID={MSSQL_CONFIG['sa_user']};PWD={MSSQL_CONFIG['sa_password']};"
+                            f"Database=master;TrustServerCertificate=yes;Encrypt=no;LoginTimeout=15;"
+                        )
+                        conn = pyodbc.connect(conn_str, autocommit=True, timeout=30)
+                        cur = conn.cursor()
+                        cur.execute(sql)
+                        cur.close()
+                        conn.close()
+                        results.append(f"{node}/{db}: OK")
+                        command_log.succeed(cmd_entry)
+                    except Exception as e:
+                        err = str(e)[:100]
+                        results.append(f"{node}/{db}: {err}")
+                        command_log.fail(cmd_entry, err)
+                    continue
+
                 cmd = [
-                    "docker", "exec", container,
+                    "docker", "exec", node,
                     "/opt/mssql-tools18/bin/sqlcmd",
                     "-S", "localhost",
                     "-U", MSSQL_CONFIG["sa_user"],
@@ -181,18 +225,15 @@ class BackupManager:
                     "-C",
                     "-Q", sql,
                 ]
-
-                label = "Backup (Fake)" if self._mssql_fake else "Backup"
-                cmd_text = f"docker exec {container} sqlcmd -S localhost -U {MSSQL_CONFIG['sa_user']} -Q \"{sql[:100]}...\""
+                cmd_text = f"docker exec {node} sqlcmd -Q \"{sql[:100]}...\""
                 cmd_entry = command_log.add(label, cmd_text)
-
                 try:
                     _run_cmd(cmd, timeout=120)
-                    results.append(f"{container}/{db}: OK")
+                    results.append(f"{node}/{db}: OK")
                     command_log.succeed(cmd_entry)
                 except Exception as e:
                     err = str(e)[:100]
-                    results.append(f"{container}/{db}: {err}")
+                    results.append(f"{node}/{db}: {err}")
                     command_log.fail(cmd_entry, err)
 
         return "; ".join(results)
